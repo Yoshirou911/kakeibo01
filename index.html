@@ -1233,6 +1233,16 @@
       ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
   }
 
+  // 一意な数値IDを発行（同一ミリ秒の連続追加でも衝突しない）
+  // ※数値のままなので既存データのIDと混在しても比較に影響しない
+  let _lastId = 0;
+  function uid() {
+    let id = Date.now();
+    if (id <= _lastId) id = _lastId + 1;
+    _lastId = id;
+    return id;
+  }
+
   const WEEKDAYS = ['日','月','火','水','木','金','土'];
 
   function setSelectedDate(dateStr) {
@@ -1837,7 +1847,7 @@
     try {
       const [price, fx] = await Promise.all([fetchQuote(symbol), fetchFx()]);
       priceCache[symbol] = price; fxCache = fx;
-      assets.push({ id: Date.now(), name, symbol, baseValue: value, basePrice: price, baseFx: fx });
+      assets.push({ id: uid(), name, symbol, baseValue: value, basePrice: price, baseFx: fx });
       saveAssets();
       document.getElementById('asset-value').value = '';
       setAssetStatus('');
@@ -1917,7 +1927,7 @@
     const initial = parseInt(document.getElementById('acct-initial').value) || 0;
     if (!name) { document.getElementById('acct-name').focus(); return; }
     if (accounts.some(a => a.name === name)) { alert('同じ名前の口座があります'); return; }
-    accounts.push({ id: Date.now(), name, initial });
+    accounts.push({ id: uid(), name, initial });
     saveAccounts();
     document.getElementById('acct-name').value = '';
     document.getElementById('acct-initial').value = '';
@@ -2223,7 +2233,7 @@
     } else {
       pushUndoKeys([targetKey]);
       const arr = readMonth(targetKey);
-      arr.unshift({ id: Date.now(), type: currentType, name, amount, cat, acct, date });
+      arr.unshift({ id: uid(), type: currentType, name, amount, cat, acct, date });
       writeMonth(targetKey, arr);
     }
 
