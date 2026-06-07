@@ -1922,6 +1922,34 @@
     return assets.reduce((s, a) => s + holdingValue(a), 0);
   }
 
+  /* ===== 投資評価額の月次スナップショット =====
+     投資の評価額は「今」の価格しか取れないため、月ごとの値を記録しておき
+     過去も含めた本当の総資産推移を描けるようにする。
+     形式: { 'YYYY-MM': 評価額(円), ... } */
+  function loadNwHistory() {
+    try { return JSON.parse(localStorage.getItem('kakeibo-nw')) || {}; }
+    catch (_) { return {}; }
+  }
+  function saveNwHistory(h) {
+    localStorage.setItem('kakeibo-nw', JSON.stringify(h));
+  }
+  // 実時間の「今月」の投資評価額を記録する
+  function recordNwSnapshot() {
+    const now = new Date();
+    const ym = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+    const h = loadNwHistory();
+    h[ym] = investmentTotalNow();
+    saveNwHistory(h);
+    return h;
+  }
+  // 指定月(ym)時点の投資評価額。実時間の今月は最新の評価額、
+  // それ以外は「その月までに記録した最も新しいスナップショット」を引き継ぐ。
+  function investmentAt(ym, history, realYM) {
+    if (ym === realYM) return investmentTotalNow();
+    const keys = Object.keys(history).filter(k => k <= ym).sort();
+    return keys.length ? history[keys[keys.length - 1]] : 0;
+  }
+
   function renderNetworth() {
     const chart = document.getElementById('nw-chart');
     if (!chart) return;
@@ -1941,6 +1969,9 @@
     const now = new Date();
     const realYM = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
 
+    // 今月の投資評価額を記録し、過去分は記録済みスナップショットを引き継ぐ
+    const history = recordNwSnapshot();
+
     document.getElementById('nw-total').textContent = (totalNow < 0 ? '−' : '') + fmt(totalNow);
     document.getElementById('nw-breakdown').textContent =
       '現金 ' + (cashNow < 0 ? '−' : '') + fmt(cashNow) + ' ・ 投資 ' + fmt(invest);
@@ -1951,8 +1982,8 @@
       let y = currentYear, m = currentMonth - i;
       while (m < 0) { m += 12; y--; }
       const ym = y + '-' + pad2(m + 1);
-      let val = cumulativeAt(ym);
-      if (ym === realYM) val += invest;   // 現在の月だけ投資を上乗せ
+      // その月の現金累計＋その月時点の投資評価額（スナップショット）
+      const val = cumulativeAt(ym) + investmentAt(ym, history, realYM);
       data.push({ y, m, val });
     }
 
