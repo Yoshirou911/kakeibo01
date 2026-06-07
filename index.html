@@ -342,6 +342,35 @@
     }
     .asset-add button:hover { background: rgba(255,255,255,0.18); }
 
+    /* 総資産カード */
+    .nw-card {
+      background: var(--surface);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      margin-bottom: 24px;
+    }
+    .nw-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+    .nw-total {
+      font-family: 'DM Serif Display', serif; font-size: 30px; line-height: 1;
+      color: var(--gold); letter-spacing: -0.5px;
+    }
+    .nw-breakdown { font-size: 12px; color: var(--text-2); }
+    .nw-chart { display: flex; align-items: flex-end; gap: 8px; }
+    .nw-col { flex: 1; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+    .nw-bars { height: 100px; display: flex; align-items: flex-end; width: 100%; }
+    .nw-bar {
+      width: 100%;
+      background: linear-gradient(to top, rgba(232,201,106,0.7), rgba(232,201,106,0.3));
+      border-radius: 4px 4px 0 0; min-height: 2px;
+      transition: height 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .nw-month { font-size: 11px; color: var(--text-2); margin-top: 8px; }
+    .nw-val { font-size: 9px; color: var(--text-3); margin-top: 2px; white-space: nowrap; }
+    .nw-col.current .nw-month { color: var(--gold); font-weight: 600; }
+
     /* フォームカード */
     .form-card {
       background: var(--surface);
@@ -982,6 +1011,9 @@
       .asset-add select { max-width: 100%; flex: 1 1 100%; }
       .acct-add-row { flex-wrap: wrap; }
       .acct-add-row input { flex: 1 1 100%; }
+      .nw-chart { gap: 4px; }
+      .nw-val { font-size: 7.5px; }
+      .nw-total { font-size: 26px; }
     }
   </style>
 </head>
@@ -1052,6 +1084,15 @@
         <input type="number" id="asset-value" placeholder="現在の評価額（円）" min="0">
         <button onclick="addAsset()">追加</button>
       </div>
+    </div>
+
+    <div class="nw-card">
+      <div class="nw-head">
+        <div class="asset-title">総資産</div>
+        <div class="nw-total" id="nw-total">¥0</div>
+        <div class="nw-breakdown" id="nw-breakdown"></div>
+      </div>
+      <div class="nw-chart" id="nw-chart"></div>
     </div>
 
     <div class="form-card">
@@ -1669,6 +1710,7 @@
       totalEl.textContent = '¥0';
       chEl.textContent = '';
       chEl.className = 'asset-change';
+      renderNetworth();
       return;
     }
 
@@ -1704,6 +1746,7 @@
     totalEl.textContent = fmt(total);
     chEl.textContent = tsign + fmt(Math.abs(tDiff)) + ' (' + tsign + Math.abs(tpct).toFixed(1) + '%)';
     chEl.className = 'asset-change ' + tcls;
+    renderNetworth();
   }
 
   async function addAsset() {
@@ -1853,6 +1896,76 @@
       }
     });
     loadData();
+  }
+
+  /* ===== 総資産の推移（現金＋投資） ===== */
+  function sumInitials() {
+    return accounts.reduce((s, a) => s + (a.initial || 0), 0);
+  }
+
+  // 月ごとの収支(income-expense)を全localStorageから集計
+  function monthlyNet() {
+    const res = {};   // 'YYYY-MM' -> net
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !/^kakeibo-\d{4}-\d{2}$/.test(k)) continue;
+      let arr;
+      try { arr = JSON.parse(localStorage.getItem(k)) || []; } catch (_) { continue; }
+      let net = 0;
+      arr.forEach(t => { net += (t.type === 'income') ? t.amount : -t.amount; });
+      res[k.replace('kakeibo-', '')] = net;
+    }
+    return res;
+  }
+
+  function investmentTotalNow() {
+    return assets.reduce((s, a) => s + holdingValue(a), 0);
+  }
+
+  function renderNetworth() {
+    const chart = document.getElementById('nw-chart');
+    if (!chart) return;
+
+    const monthly = monthlyNet();
+    const initials = sumInitials();
+    const cumulativeAt = (ym) => {
+      let net = initials;
+      Object.keys(monthly).forEach(k => { if (k <= ym) net += monthly[k]; });
+      return net;
+    };
+
+    const invest = investmentTotalNow();
+    const cashNow = initials + Object.values(monthly).reduce((s, v) => s + v, 0);
+    const totalNow = cashNow + invest;
+
+    const now = new Date();
+    const realYM = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+
+    document.getElementById('nw-total').textContent = (totalNow < 0 ? '−' : '') + fmt(totalNow);
+    document.getElementById('nw-breakdown').textContent =
+      '現金 ' + (cashNow < 0 ? '−' : '') + fmt(cashNow) + ' ・ 投資 ' + fmt(invest);
+
+    const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    const data = [];
+    for (let i = 5; i >= 0; i--) {
+      let y = currentYear, m = currentMonth - i;
+      while (m < 0) { m += 12; y--; }
+      const ym = y + '-' + pad2(m + 1);
+      let val = cumulativeAt(ym);
+      if (ym === realYM) val += invest;   // 現在の月だけ投資を上乗せ
+      data.push({ y, m, val });
+    }
+
+    const maxVal = Math.max(1, ...data.map(d => Math.abs(d.val)));
+    chart.innerHTML = data.map(d => {
+      const isCurrent = (d.y === currentYear && d.m === currentMonth);
+      const h = Math.round(Math.abs(d.val) / maxVal * 100);
+      return '<div class="nw-col' + (isCurrent ? ' current' : '') + '">' +
+        '<div class="nw-bars"><div class="nw-bar" style="height:' + h + '%"></div></div>' +
+        '<div class="nw-month">' + MONTHS[d.m] + '</div>' +
+        '<div class="nw-val">' + fmt(d.val) + '</div>' +
+      '</div>';
+    }).join('');
   }
 
   // すべての月の取引から口座ごとの収入・支出を集計
@@ -2053,6 +2166,7 @@
 
     renderTrend();
     renderAccounts();
+    renderNetworth();
 
     const list = document.getElementById('tx-list');
     if (transactions.length === 0) {
