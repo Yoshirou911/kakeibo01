@@ -1,0 +1,9 @@
+# Claude Code のメモリ・セッションファイル（公開不要）
+.claude/
+
+# 中身が空の不要ファイル
+HTML
+
+# OS が作る一時ファイル
+Thumbs.db
+.DS_Store
