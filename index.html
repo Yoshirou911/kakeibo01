@@ -218,6 +218,74 @@
     .metric-value.expense { color: var(--expense); }
     .metric-value.balance { color: var(--text); }
 
+    /* 投資資産カード */
+    .asset-card {
+      background: var(--surface);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      margin-bottom: 24px;
+    }
+    .asset-head { display: flex; align-items: flex-start; justify-content: space-between; }
+    .asset-head-left { display: flex; flex-direction: column; gap: 4px; }
+    .asset-title {
+      font-size: 10px; font-weight: 500; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--text-3);
+    }
+    .asset-total {
+      font-family: 'DM Serif Display', serif; font-size: 26px; line-height: 1;
+      color: var(--text); letter-spacing: -0.5px;
+    }
+    .asset-change { font-size: 12px; color: var(--text-3); }
+    .asset-change.pos, .asset-diff.pos { color: var(--income); }
+    .asset-change.neg, .asset-diff.neg { color: var(--expense); }
+    .asset-refresh {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      border: 1px solid var(--border-med); background: rgba(255,255,255,0.06);
+      color: var(--text-2); font-size: 16px; cursor: pointer; transition: all 0.15s;
+    }
+    .asset-refresh:hover { background: rgba(255,255,255,0.14); color: var(--text); }
+    .asset-refresh.spin { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .asset-status { font-size: 11px; color: var(--text-3); margin-top: 8px; }
+    .asset-status:empty { display: none; }
+    .asset-list { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+    .asset-empty { font-size: 12px; color: var(--text-3); padding: 8px 0; line-height: 1.5; }
+    .asset-item {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 12px;
+    }
+    .asset-item-info { flex: 1; min-width: 0; }
+    .asset-name { font-size: 13px; font-weight: 500; color: var(--text); }
+    .asset-sub { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+    .asset-vals { text-align: right; flex-shrink: 0; }
+    .asset-val { font-family: 'DM Serif Display', serif; font-size: 15px; color: var(--text); }
+    .asset-diff { font-size: 10.5px; margin-top: 2px; color: var(--text-3); }
+    .asset-actions { display: flex; gap: 2px; flex-shrink: 0; }
+    .asset-actions button {
+      width: 26px; height: 26px; border: none; background: none; cursor: pointer;
+      color: var(--text-3); font-size: 12px; border-radius: 6px; transition: all 0.15s;
+    }
+    .asset-actions button:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .asset-add { display: flex; gap: 8px; margin-top: 12px; }
+    .asset-add select, .asset-add input {
+      padding: 9px 10px; border: 1px solid var(--border-med); border-radius: var(--radius);
+      background: rgba(0,0,0,0.3); color: var(--text); font-size: 13px;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif; outline: none;
+    }
+    .asset-add select { flex: 0 0 auto; max-width: 42%; -webkit-appearance: none; }
+    .asset-add select option { background: #1a1d26; color: #f0ede8; }
+    .asset-add input { flex: 1; min-width: 0; -webkit-appearance: none; }
+    .asset-add button {
+      padding: 9px 14px; border: 1px solid var(--border-med); border-radius: var(--radius);
+      background: rgba(255,255,255,0.1); color: var(--text); font-size: 13px; cursor: pointer;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif; white-space: nowrap; transition: all 0.15s;
+    }
+    .asset-add button:hover { background: rgba(255,255,255,0.18); }
+
     /* フォームカード */
     .form-card {
       background: var(--surface);
@@ -824,6 +892,8 @@
       .trend-chart { gap: 5px; }
       .trend-bar { width: 10px; }
       .trend-bal { font-size: 8px; }
+      .asset-add { flex-wrap: wrap; }
+      .asset-add select { max-width: 100%; flex: 1 1 100%; }
     }
   </style>
 </head>
@@ -859,6 +929,24 @@
       <div class="metric">
         <div class="metric-label">残高</div>
         <div class="metric-value balance" id="total-balance">¥0</div>
+      </div>
+    </div>
+
+    <div class="asset-card">
+      <div class="asset-head">
+        <div class="asset-head-left">
+          <div class="asset-title">投資資産（概算）</div>
+          <div class="asset-total" id="asset-total">¥0</div>
+          <div class="asset-change" id="asset-change"></div>
+        </div>
+        <button class="asset-refresh" id="asset-refresh" onclick="updatePrices(true)" title="最新価格に更新">⟳</button>
+      </div>
+      <div class="asset-status" id="asset-status"></div>
+      <div class="asset-list" id="asset-list"></div>
+      <div class="asset-add">
+        <select id="asset-fund"></select>
+        <input type="number" id="asset-value" placeholder="現在の評価額（円）" min="0">
+        <button onclick="addAsset()">追加</button>
       </div>
     </div>
 
@@ -1221,6 +1309,17 @@
     const todayStr = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate());
     setSelectedDate(todayStr);
     loadData();
+
+    // 投資資産の初期化
+    const fundSel = document.getElementById('asset-fund');
+    if (fundSel) fundSel.innerHTML = FUND_PRESETS.map(f => '<option value="' + f.symbol + '">' + f.name + '</option>').join('');
+    const cachedPrices = localStorage.getItem('kakeibo-prices');
+    if (cachedPrices) {
+      try { const o = JSON.parse(cachedPrices); priceCache = o.priceCache || {}; fxCache = o.fxCache || null; } catch (_) {}
+    }
+    loadAssets();
+    updatePrices(false);
+    setInterval(() => updatePrices(false), 60 * 60 * 1000); // 1時間ごとに自動更新
   }
 
   function storageKey() {
@@ -1282,6 +1381,7 @@
     if (!cloudUserName) return;
     if (window.cloudSubscribeMonth) window.cloudSubscribeMonth(storageKey());
     if (window.cloudFetchMonths) window.cloudFetchMonths(trendMonthKeys());
+    if (window.cloudSubscribeAssets) window.cloudSubscribeAssets();
   }
 
   // Firebaseモジュールから呼ばれる：クラウドのデータを画面に反映
@@ -1330,6 +1430,176 @@
     } else {
       alert('同期機能を準備中です。数秒待ってからもう一度お試しください。');
     }
+  }
+
+  /* ===== 投資資産（指数ETFの価格で評価額を自動更新） ===== */
+  const FINNHUB_KEY = 'd8ihc39r01qm63bc8jbgd8ihc39r01qm63bc8jc0';
+  const FUND_PRESETS = [
+    { name: 'オルカン（全世界株）', symbol: 'ACWI' },
+    { name: 'S&P500',            symbol: 'SPY'  },
+    { name: 'SOX（半導体）',       symbol: 'SOXX' },
+    { name: 'インド株',           symbol: 'INDA' }
+  ];
+  let assets = [];
+  let priceCache = {};   // symbol -> 価格(USD)
+  let fxCache = null;    // USD/JPY
+
+  function loadAssets() {
+    const saved = localStorage.getItem('kakeibo-assets');
+    assets = saved ? JSON.parse(saved) : [];
+    renderAssets();
+    if (cloudUserName && window.cloudSubscribeAssets) window.cloudSubscribeAssets();
+  }
+
+  function saveAssets() {
+    localStorage.setItem('kakeibo-assets', JSON.stringify(assets));
+    if (window.cloudSaveAssets) window.cloudSaveAssets(assets);
+    renderAssets();
+  }
+
+  // Firebaseモジュールから呼ばれる
+  window.applyCloudAssets = function(holdings) {
+    assets = holdings || [];
+    localStorage.setItem('kakeibo-assets', JSON.stringify(assets));
+    renderAssets();
+    updatePrices(false);
+  };
+  window.getLocalAssets = function() { return localStorage.getItem('kakeibo-assets'); };
+
+  async function fetchQuote(symbol) {
+    const r = await fetch('https://finnhub.io/api/v1/quote?symbol=' + symbol + '&token=' + FINNHUB_KEY);
+    const j = await r.json();
+    if (j && typeof j.c === 'number' && j.c > 0) return j.c;
+    throw new Error(symbol + ' の価格を取得できませんでした');
+  }
+  async function fetchFx() {
+    const r = await fetch('https://open.er-api.com/v6/latest/USD');
+    const j = await r.json();
+    if (j && j.rates && j.rates.JPY) return j.rates.JPY;
+    throw new Error('為替を取得できませんでした');
+  }
+
+  function setAssetStatus(msg) {
+    const el = document.getElementById('asset-status');
+    if (el) el.textContent = msg || '';
+  }
+
+  async function updatePrices(showSpin) {
+    const symbols = [...new Set(assets.map(a => a.symbol))];
+    if (!symbols.length) { renderAssets(); return; }
+    const refresh = document.getElementById('asset-refresh');
+    if (showSpin && refresh) refresh.classList.add('spin');
+    setAssetStatus('最新価格を取得中…');
+    try {
+      const results = await Promise.all([fetchFx(), ...symbols.map(fetchQuote)]);
+      fxCache = results[0];
+      symbols.forEach((s, i) => { priceCache[s] = results[i + 1]; });
+      localStorage.setItem('kakeibo-prices', JSON.stringify({ priceCache, fxCache, t: Date.now() }));
+      setAssetStatus('更新: ' + new Date().toLocaleString('ja-JP'));
+      renderAssets();
+    } catch (e) {
+      setAssetStatus('価格を取得できませんでした（時間をおいて再度お試しください）');
+    } finally {
+      if (refresh) refresh.classList.remove('spin');
+    }
+  }
+
+  function holdingValue(a) {
+    const price = priceCache[a.symbol];
+    if (!price || !fxCache || !a.basePrice || !a.baseFx) return a.baseValue;
+    return Math.round(a.baseValue * (price / a.basePrice) * (fxCache / a.baseFx));
+  }
+
+  function renderAssets() {
+    const list = document.getElementById('asset-list');
+    if (!list) return;
+    const totalEl = document.getElementById('asset-total');
+    const chEl = document.getElementById('asset-change');
+
+    if (!assets.length) {
+      list.innerHTML = '<div class="asset-empty">下から資産を追加すると、ネットの指数データで評価額が自動で更新されます。</div>';
+      totalEl.textContent = '¥0';
+      chEl.textContent = '';
+      chEl.className = 'asset-change';
+      return;
+    }
+
+    let total = 0, base = 0;
+    list.innerHTML = assets.map(a => {
+      const val = holdingValue(a);
+      total += val; base += a.baseValue;
+      const diff = val - a.baseValue;
+      const pct = a.baseValue ? (diff / a.baseValue * 100) : 0;
+      const cls = diff >= 0 ? 'pos' : 'neg';
+      const sign = diff >= 0 ? '+' : '−';
+      return `
+        <div class="asset-item">
+          <div class="asset-item-info">
+            <div class="asset-name">${a.name}</div>
+            <div class="asset-sub">${a.symbol} · 基準 ${fmt(a.baseValue)}</div>
+          </div>
+          <div class="asset-vals">
+            <div class="asset-val">${fmt(val)}</div>
+            <div class="asset-diff ${cls}">${sign}${fmt(Math.abs(diff))} (${sign}${Math.abs(pct).toFixed(1)}%)</div>
+          </div>
+          <div class="asset-actions">
+            <button onclick="rebaseAsset(${a.id})" title="評価額を再設定">⟳</button>
+            <button onclick="deleteAsset(${a.id})" title="削除">✕</button>
+          </div>
+        </div>`;
+    }).join('');
+
+    const tDiff = total - base;
+    const tcls = tDiff >= 0 ? 'pos' : 'neg';
+    const tsign = tDiff >= 0 ? '+' : '−';
+    const tpct = base ? (tDiff / base * 100) : 0;
+    totalEl.textContent = fmt(total);
+    chEl.textContent = tsign + fmt(Math.abs(tDiff)) + ' (' + tsign + Math.abs(tpct).toFixed(1) + '%)';
+    chEl.className = 'asset-change ' + tcls;
+  }
+
+  async function addAsset() {
+    const sel = document.getElementById('asset-fund');
+    const symbol = sel.value;
+    const name = sel.options[sel.selectedIndex].textContent;
+    const value = parseInt(document.getElementById('asset-value').value);
+    if (!value || value <= 0) { document.getElementById('asset-value').focus(); return; }
+    setAssetStatus('価格を取得中…');
+    try {
+      const [price, fx] = await Promise.all([fetchQuote(symbol), fetchFx()]);
+      priceCache[symbol] = price; fxCache = fx;
+      assets.push({ id: Date.now(), name, symbol, baseValue: value, basePrice: price, baseFx: fx });
+      saveAssets();
+      document.getElementById('asset-value').value = '';
+      setAssetStatus('');
+    } catch (e) {
+      setAssetStatus('価格を取得できませんでした。時間をおいて再度お試しください。');
+    }
+  }
+
+  async function rebaseAsset(id) {
+    const a = assets.find(x => x.id === id);
+    if (!a) return;
+    const input = prompt(a.name + ' の現在の評価額（円）を入力してください', a.baseValue);
+    if (input == null) return;
+    const v = parseInt(input);
+    if (!v || v <= 0) return;
+    setAssetStatus('価格を取得中…');
+    try {
+      const [price, fx] = await Promise.all([fetchQuote(a.symbol), fetchFx()]);
+      a.baseValue = v; a.basePrice = price; a.baseFx = fx;
+      priceCache[a.symbol] = price; fxCache = fx;
+      saveAssets();
+      setAssetStatus('');
+    } catch (e) {
+      setAssetStatus('価格を取得できませんでした');
+    }
+  }
+
+  function deleteAsset(id) {
+    if (!confirm('この資産を削除しますか？')) return;
+    assets = assets.filter(x => x.id !== id);
+    saveAssets();
   }
 
   function changeMonth(d) {
@@ -1587,10 +1857,12 @@
   const provider = new GoogleAuthProvider();
 
   let uid = null;
-  let unsub = null;     // 現在購読中の月リスナー
-  let subKey = null;    // 購読中の月キー
+  let unsub = null;        // 現在購読中の月リスナー
+  let subKey = null;       // 購読中の月キー
+  let assetsUnsub = null;  // 投資資産リスナー
 
-  const monthRef = (key) => doc(db, 'users', uid, 'months', key);
+  const monthRef  = (key) => doc(db, 'users', uid, 'months', key);
+  const assetsRef = ()    => doc(db, 'users', uid, 'meta', 'assets');
 
   window.cloudSignIn  = () => signInWithPopup(auth, provider)
     .catch(e => alert('ログインに失敗しました：\n' + e.message));
@@ -1628,16 +1900,41 @@
     }
   };
 
+  // 投資資産：保存とリアルタイム購読
+  window.cloudSaveAssets = (holdings) => {
+    if (!uid) return;
+    setDoc(assetsRef(), { holdings }).catch(() => {});
+  };
+  window.cloudSubscribeAssets = () => {
+    if (!uid || assetsUnsub) return;
+    assetsUnsub = onSnapshot(assetsRef(), (snap) => {
+      const holdings = snap.exists() ? (snap.data().holdings || []) : [];
+      if (window.applyCloudAssets) window.applyCloudAssets(holdings);
+    }, () => {});
+  };
+
   // 初回ログイン時：この端末のローカルデータをクラウドへ移行（未登録の月だけ）
   async function migrateLocalToCloud() {
-    if (!window.getLocalMonthKeys) return;
-    for (const key of window.getLocalMonthKeys()) {
+    if (window.getLocalMonthKeys) {
+      for (const key of window.getLocalMonthKeys()) {
+        try {
+          const snap = await getDoc(monthRef(key));
+          if (!snap.exists()) {
+            const local = window.getLocalMonth(key);
+            const txs = local ? JSON.parse(local) : [];
+            if (txs.length) await setDoc(monthRef(key), { transactions: txs });
+          }
+        } catch (_) {}
+      }
+    }
+    // 投資資産も移行
+    if (window.getLocalAssets) {
       try {
-        const snap = await getDoc(monthRef(key));
+        const snap = await getDoc(assetsRef());
         if (!snap.exists()) {
-          const local = window.getLocalMonth(key);
-          const txs = local ? JSON.parse(local) : [];
-          if (txs.length) await setDoc(monthRef(key), { transactions: txs });
+          const local = window.getLocalAssets();
+          const h = local ? JSON.parse(local) : [];
+          if (h.length) await setDoc(assetsRef(), { holdings: h });
         }
       } catch (_) {}
     }
@@ -1649,8 +1946,9 @@
     if (user) {
       await migrateLocalToCloud();      // 先にローカルデータを退避してから
       if (window.onCloudReady) window.onCloudReady();
-    } else if (unsub) {
-      unsub(); unsub = null; subKey = null;
+    } else {
+      if (unsub) { unsub(); unsub = null; subKey = null; }
+      if (assetsUnsub) { assetsUnsub(); assetsUnsub = null; }
     }
   });
 </script>
