@@ -1370,22 +1370,58 @@
     if (window.cloudSaveMonth) window.cloudSaveMonth(storageKey(), transactions);
   }
 
-  // 変更前の状態を記録（取消し用）
-  function pushUndo() {
-    undoStack.push({ y: currentYear, m: currentMonth, data: JSON.stringify(transactions) });
+  // 日付(YYYY-MM-DD)からその月の保存キーを求める
+  function monthKeyFromDate(dateStr) {
+    const p = dateStr.split('-');
+    return 'kakeibo-' + p[0] + '-' + p[1];
+  }
+
+  // 指定月の取引配列を取得（表示中の月ならメモリから、それ以外はlocalStorageから）
+  function readMonth(key) {
+    if (key === storageKey()) return transactions.slice();
+    const saved = localStorage.getItem(key);
+    return saved ? JSON.parse(saved) : [];
+  }
+
+  // 指定月の取引配列を保存（localStorage＋クラウド）して表示を更新
+  function writeMonth(key, arr) {
+    localStorage.setItem(key, JSON.stringify(arr));
+    if (window.cloudSaveMonth) window.cloudSaveMonth(key, arr);
+    if (key === storageKey()) transactions = arr;
+    render();
+  }
+
+  // 指定月キーの月へ移動（必要があれば）
+  function gotoMonthKey(key) {
+    const parts = key.replace('kakeibo-', '').split('-');
+    const y = parseInt(parts[0], 10), m = parseInt(parts[1], 10) - 1;
+    if (y === currentYear && m === currentMonth) {
+      render();
+    } else {
+      currentYear = y;
+      currentMonth = m;
+      loadData();
+    }
+  }
+
+  // 変更前の状態を記録（取消し用）。影響する月のキー配列を渡す
+  function pushUndoKeys(keys) {
+    const snaps = keys.map(key => ({ key, data: localStorage.getItem(key) }));
+    undoStack.push(snaps);
     if (undoStack.length > 30) undoStack.shift();
     updateUndoBtn();
   }
 
-  // 直前の操作を取り消す
+  // 直前の操作を取り消す（複数月にまたがる変更も元に戻す）
   function undo() {
     if (!undoStack.length) return;
-    const snap = undoStack.pop();
-    currentYear = snap.y;
-    currentMonth = snap.m;
-    transactions = JSON.parse(snap.data);
-    saveData();
-    render();
+    const snaps = undoStack.pop();
+    snaps.forEach(s => {
+      if (s.data == null) localStorage.removeItem(s.key);
+      else localStorage.setItem(s.key, s.data);
+      if (window.cloudSaveMonth) window.cloudSaveMonth(s.key, s.data ? JSON.parse(s.data) : []);
+    });
+    loadData();
     updateUndoBtn();
   }
 
@@ -1676,19 +1712,35 @@
       document.getElementById('input-name').focus();
       return;
     }
-    pushUndo();
+    const targetKey = monthKeyFromDate(date);
+
     if (editingId != null) {
-      const t = transactions.find(x => x.id === editingId);
-      if (t) { t.type = currentType; t.name = name; t.amount = amount; t.cat = cat; t.date = date; }
+      const curKey = storageKey();
+      pushUndoKeys(curKey === targetKey ? [curKey] : [curKey, targetKey]);
+      const updated = { id: editingId, type: currentType, name, amount, cat, date };
+      if (targetKey === curKey) {
+        transactions = transactions.map(t => t.id === editingId ? updated : t);
+        saveData();
+      } else {
+        // 日付の月が変わった → 元の月から外して新しい月へ移動
+        transactions = transactions.filter(t => t.id !== editingId);
+        saveData();
+        const arr = readMonth(targetKey);
+        arr.unshift(updated);
+        writeMonth(targetKey, arr);
+      }
       editingId = null;
       resetSubmitButton();
     } else {
-      transactions.unshift({ id: Date.now(), type: currentType, name, amount, cat, date });
+      pushUndoKeys([targetKey]);
+      const arr = readMonth(targetKey);
+      arr.unshift({ id: Date.now(), type: currentType, name, amount, cat, date });
+      writeMonth(targetKey, arr);
     }
-    saveData();
+
     document.getElementById('input-name').value = '';
     document.getElementById('input-amount').value = '';
-    render();
+    gotoMonthKey(targetKey);   // 入力した日付の月を表示する
   }
 
   // 取引を編集モードで開く
@@ -1727,7 +1779,7 @@
   }
 
   function deleteTransaction(id) {
-    pushUndo();
+    pushUndoKeys([storageKey()]);
     transactions = transactions.filter(t => t.id !== id);
     saveData();
     render();
