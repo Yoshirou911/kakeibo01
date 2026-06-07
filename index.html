@@ -218,6 +218,56 @@
     .metric-value.expense { color: var(--expense); }
     .metric-value.balance { color: var(--text); }
 
+    /* 口座残高カード */
+    .acct-card {
+      background: var(--surface);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      margin-bottom: 24px;
+    }
+    .acct-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .acct-manage-btn {
+      padding: 5px 12px; border: 1px solid var(--border-med); border-radius: 99px;
+      background: rgba(255,255,255,0.06); color: var(--text-2); font-size: 11px; cursor: pointer;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif; transition: all 0.15s;
+    }
+    .acct-manage-btn:hover { background: rgba(255,255,255,0.14); color: var(--text); }
+    .acct-list { display: flex; flex-direction: column; gap: 6px; }
+    .acct-empty { font-size: 12px; color: var(--text-3); padding: 6px 0; }
+    .acct-item {
+      display: flex; align-items: center; gap: 12px;
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 10px 12px;
+    }
+    .acct-item-info { flex: 1; min-width: 0; }
+    .acct-name { font-size: 13px; font-weight: 500; color: var(--text); }
+    .acct-sub { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+    .acct-bal { font-family: 'DM Serif Display', serif; font-size: 15px; color: var(--text); flex-shrink: 0; }
+    .acct-actions { display: flex; gap: 2px; flex-shrink: 0; }
+    .acct-actions button {
+      width: 26px; height: 26px; border: none; background: none; cursor: pointer;
+      color: var(--text-3); font-size: 12px; border-radius: 6px; transition: all 0.15s;
+    }
+    .acct-actions button:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .acct-manage { margin-top: 12px; }
+    .acct-add-row { display: flex; gap: 8px; }
+    .acct-add-row input {
+      padding: 9px 10px; border: 1px solid var(--border-med); border-radius: var(--radius);
+      background: rgba(0,0,0,0.3); color: var(--text); font-size: 13px;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif; outline: none; min-width: 0;
+    }
+    .acct-add-row input:first-child { flex: 1.4; }
+    .acct-add-row input:nth-child(2) { flex: 1; }
+    .acct-add-row button {
+      padding: 9px 14px; border: 1px solid var(--border-med); border-radius: var(--radius);
+      background: rgba(255,255,255,0.1); color: var(--text); font-size: 13px; cursor: pointer;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif; white-space: nowrap;
+    }
+    .acct-hint { font-size: 10px; color: var(--text-3); margin-top: 8px; }
+
     /* 投資資産カード */
     .asset-card {
       background: var(--surface);
@@ -924,6 +974,8 @@
       .trend-bal { font-size: 8px; }
       .asset-add { flex-wrap: wrap; }
       .asset-add select { max-width: 100%; flex: 1 1 100%; }
+      .acct-add-row { flex-wrap: wrap; }
+      .acct-add-row input { flex: 1 1 100%; }
     }
   </style>
 </head>
@@ -959,6 +1011,22 @@
       <div class="metric">
         <div class="metric-label">残高</div>
         <div class="metric-value balance" id="total-balance">¥0</div>
+      </div>
+    </div>
+
+    <div class="acct-card">
+      <div class="acct-head">
+        <div class="asset-title">口座残高</div>
+        <button class="acct-manage-btn" onclick="toggleAcctManage()">＋ 管理</button>
+      </div>
+      <div class="acct-list" id="acct-list"></div>
+      <div class="acct-manage" id="acct-manage" style="display:none;">
+        <div class="acct-add-row">
+          <input id="acct-name" placeholder="口座名（例：楽天銀行）">
+          <input id="acct-initial" type="number" placeholder="初期残高（円）">
+          <button onclick="addAccount()">追加</button>
+        </div>
+        <div class="acct-hint">残高 = 初期残高 ＋ これまでの収入 − 支出</div>
       </div>
     </div>
 
@@ -1000,6 +1068,10 @@
           <label>金額（円）</label>
           <input type="number" id="input-amount" placeholder="0" min="0">
         </div>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>口座</label>
+        <select id="input-acct"></select>
       </div>
       <div class="form-row">
         <div class="form-group">
@@ -1340,6 +1412,7 @@
     currentMonth = now.getMonth();
     const todayStr = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate());
     setSelectedDate(todayStr);
+    loadAccounts();
     loadData();
 
     // 投資資産の初期化
@@ -1450,6 +1523,7 @@
     if (window.cloudSubscribeMonth) window.cloudSubscribeMonth(storageKey());
     if (window.cloudFetchMonths) window.cloudFetchMonths(trendMonthKeys());
     if (window.cloudSubscribeAssets) window.cloudSubscribeAssets();
+    if (window.cloudSubscribeAccounts) window.cloudSubscribeAccounts();
   }
 
   // Firebaseモジュールから呼ばれる：クラウドのデータを画面に反映
@@ -1670,6 +1744,135 @@
     saveAssets();
   }
 
+  /* ===== 口座・銀行ごとの管理 ===== */
+  let accounts = [];   // { id, name, initial }
+
+  function defaultAccounts() { return [{ id: 1, name: '現金', initial: 0 }]; }
+
+  function loadAccounts() {
+    const saved = localStorage.getItem('kakeibo-accounts');
+    accounts = saved ? JSON.parse(saved) : defaultAccounts();
+    populateAcctSelect();
+    renderAccounts();
+    if (cloudUserName && window.cloudSubscribeAccounts) window.cloudSubscribeAccounts();
+  }
+
+  function saveAccounts() {
+    localStorage.setItem('kakeibo-accounts', JSON.stringify(accounts));
+    if (window.cloudSaveAccounts) window.cloudSaveAccounts(accounts);
+    populateAcctSelect();
+    renderAccounts();
+  }
+
+  window.applyCloudAccounts = function(list) {
+    accounts = (list && list.length) ? list : defaultAccounts();
+    localStorage.setItem('kakeibo-accounts', JSON.stringify(accounts));
+    populateAcctSelect();
+    renderAccounts();
+  };
+  window.getLocalAccounts = function() { return localStorage.getItem('kakeibo-accounts'); };
+
+  function populateAcctSelect() {
+    const sel = document.getElementById('input-acct');
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = accounts.map(a => '<option value="' + a.name + '">' + a.name + '</option>').join('');
+    if (cur && accounts.some(a => a.name === cur)) sel.value = cur;
+  }
+
+  function toggleAcctManage() {
+    const m = document.getElementById('acct-manage');
+    if (m) m.style.display = (m.style.display === 'none') ? '' : 'none';
+  }
+
+  function addAccount() {
+    const name = document.getElementById('acct-name').value.trim();
+    const initial = parseInt(document.getElementById('acct-initial').value) || 0;
+    if (!name) { document.getElementById('acct-name').focus(); return; }
+    if (accounts.some(a => a.name === name)) { alert('同じ名前の口座があります'); return; }
+    accounts.push({ id: Date.now(), name, initial });
+    saveAccounts();
+    document.getElementById('acct-name').value = '';
+    document.getElementById('acct-initial').value = '';
+  }
+
+  function editAccountInitial(id) {
+    const a = accounts.find(x => x.id === id);
+    if (!a) return;
+    const input = prompt(a.name + ' の初期残高（円）を入力してください', a.initial);
+    if (input == null) return;
+    a.initial = parseInt(input) || 0;
+    saveAccounts();
+  }
+
+  function deleteAccount(id) {
+    if (accounts.length <= 1) { alert('口座は最低1つ必要です'); return; }
+    const a = accounts.find(x => x.id === id);
+    if (!a) return;
+    if (!confirm(a.name + ' を削除しますか？\n（この口座の取引は「未分類」として残ります）')) return;
+    accounts = accounts.filter(x => x.id !== id);
+    saveAccounts();
+  }
+
+  // すべての月の取引から口座ごとの収入・支出を集計
+  function computeAccountTotals() {
+    const totals = {};   // 口座名 -> { income, expense }
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !/^kakeibo-\d{4}-\d{2}$/.test(k)) continue;
+      let arr;
+      try { arr = JSON.parse(localStorage.getItem(k)) || []; } catch (_) { continue; }
+      arr.forEach(t => {
+        const acc = t.acct || '未分類';
+        if (!totals[acc]) totals[acc] = { income: 0, expense: 0 };
+        if (t.type === 'income') totals[acc].income += t.amount;
+        else totals[acc].expense += t.amount;
+      });
+    }
+    return totals;
+  }
+
+  function renderAccounts() {
+    const list = document.getElementById('acct-list');
+    if (!list) return;
+    const totals = computeAccountTotals();
+    const rows = [];
+
+    accounts.forEach(a => {
+      const t = totals[a.name] || { income: 0, expense: 0 };
+      const bal = a.initial + t.income - t.expense;
+      rows.push(
+        '<div class="acct-item">' +
+          '<div class="acct-item-info">' +
+            '<div class="acct-name">' + a.name + '</div>' +
+            '<div class="acct-sub">初期 ' + fmt(a.initial) + ' ・ +' + fmt(t.income) + ' / −' + fmt(t.expense) + '</div>' +
+          '</div>' +
+          '<div class="acct-bal" style="color:' + (bal < 0 ? 'var(--expense)' : 'var(--text)') + '">' + (bal < 0 ? '−' : '') + fmt(bal) + '</div>' +
+          '<div class="acct-actions">' +
+            '<button onclick="editAccountInitial(' + a.id + ')" title="初期残高を編集">✎</button>' +
+            '<button onclick="deleteAccount(' + a.id + ')" title="削除">✕</button>' +
+          '</div>' +
+        '</div>'
+      );
+    });
+
+    if (totals['未分類']) {
+      const t = totals['未分類'];
+      const bal = t.income - t.expense;
+      rows.push(
+        '<div class="acct-item">' +
+          '<div class="acct-item-info">' +
+            '<div class="acct-name">未分類</div>' +
+            '<div class="acct-sub">口座未設定 ・ +' + fmt(t.income) + ' / −' + fmt(t.expense) + '</div>' +
+          '</div>' +
+          '<div class="acct-bal">' + (bal < 0 ? '−' : '') + fmt(bal) + '</div>' +
+        '</div>'
+      );
+    }
+
+    list.innerHTML = rows.join('') || '<div class="acct-empty">口座がありません</div>';
+  }
+
   function changeMonth(d) {
     if (editingId != null) cancelEdit();
     currentMonth += d;
@@ -1707,6 +1910,7 @@
     const name   = document.getElementById('input-name').value.trim();
     const amount = parseInt(document.getElementById('input-amount').value);
     const cat    = document.getElementById('input-cat').value;
+    const acct   = document.getElementById('input-acct').value;
     const date   = document.getElementById('input-date').value;
     if (!name || !amount || amount <= 0) {
       document.getElementById('input-name').focus();
@@ -1717,7 +1921,7 @@
     if (editingId != null) {
       const curKey = storageKey();
       pushUndoKeys(curKey === targetKey ? [curKey] : [curKey, targetKey]);
-      const updated = { id: editingId, type: currentType, name, amount, cat, date };
+      const updated = { id: editingId, type: currentType, name, amount, cat, acct, date };
       if (targetKey === curKey) {
         transactions = transactions.map(t => t.id === editingId ? updated : t);
         saveData();
@@ -1734,7 +1938,7 @@
     } else {
       pushUndoKeys([targetKey]);
       const arr = readMonth(targetKey);
-      arr.unshift({ id: Date.now(), type: currentType, name, amount, cat, date });
+      arr.unshift({ id: Date.now(), type: currentType, name, amount, cat, acct, date });
       writeMonth(targetKey, arr);
     }
 
@@ -1753,6 +1957,8 @@
     document.getElementById('input-amount').value = t.amount;
     const catSel = document.getElementById('input-cat');
     if ([...catSel.options].some(o => o.value === t.cat)) catSel.value = t.cat;
+    const acctSel = document.getElementById('input-acct');
+    if (acctSel && t.acct && [...acctSel.options].some(o => o.value === t.acct)) acctSel.value = t.acct;
     setSelectedDate(t.date);
     document.getElementById('submit-btn').textContent = '更新する';
     document.getElementById('cancel-btn').style.display = '';
@@ -1804,6 +2010,7 @@
     balEl.style.color = balance >= 0 ? 'var(--text)' : 'var(--expense)';
 
     renderTrend();
+    renderAccounts();
 
     const list = document.getElementById('tx-list');
     if (transactions.length === 0) {
@@ -1819,7 +2026,7 @@
           <div class="tx-icon ${t.type}">${CAT_ICONS[t.cat] || '📦'}</div>
           <div class="tx-info">
             <div class="tx-name">${t.name}</div>
-            <div class="tx-meta">${t.cat} · ${t.date}</div>
+            <div class="tx-meta">${t.cat}${t.acct ? ' · ' + t.acct : ''} · ${t.date}</div>
           </div>
           <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '−'}${fmt(t.amount)}</div>
           <button class="tx-edit" onclick="startEdit(${t.id})" title="編集">✎</button>
@@ -1967,7 +2174,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
     from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, onSnapshot }
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, getDocs }
     from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -1988,10 +2195,12 @@
   let uid = null;
   let unsub = null;        // 現在購読中の月リスナー
   let subKey = null;       // 購読中の月キー
-  let assetsUnsub = null;  // 投資資産リスナー
+  let assetsUnsub = null;    // 投資資産リスナー
+  let accountsUnsub = null;  // 口座リスナー
 
-  const monthRef  = (key) => doc(db, 'users', uid, 'months', key);
-  const assetsRef = ()    => doc(db, 'users', uid, 'meta', 'assets');
+  const monthRef    = (key) => doc(db, 'users', uid, 'months', key);
+  const assetsRef   = ()    => doc(db, 'users', uid, 'meta', 'assets');
+  const accountsRef = ()    => doc(db, 'users', uid, 'meta', 'accounts');
 
   window.cloudSignIn  = () => signInWithPopup(auth, provider)
     .catch(e => alert('ログインに失敗しました：\n' + e.message));
@@ -2042,6 +2251,30 @@
     }, () => {});
   };
 
+  // 口座：保存とリアルタイム購読
+  window.cloudSaveAccounts = (list) => {
+    if (!uid) return;
+    setDoc(accountsRef(), { accounts: list }).catch(() => {});
+  };
+  window.cloudSubscribeAccounts = () => {
+    if (!uid || accountsUnsub) return;
+    accountsUnsub = onSnapshot(accountsRef(), (snap) => {
+      const list = snap.exists() ? (snap.data().accounts || []) : [];
+      if (window.applyCloudAccounts) window.applyCloudAccounts(list);
+    }, () => {});
+  };
+
+  // 全期間の月データをまとめて取得（口座残高や推移を全端末で正確に）
+  window.cloudFetchAllMonths = async () => {
+    if (!uid) return;
+    try {
+      const qs = await getDocs(collection(db, 'users', uid, 'months'));
+      qs.forEach(d => {
+        if (window.applyCloudData) window.applyCloudData(d.id, (d.data().transactions) || []);
+      });
+    } catch (_) {}
+  };
+
   // 初回ログイン時：この端末のローカルデータをクラウドへ移行（未登録の月だけ）
   async function migrateLocalToCloud() {
     if (window.getLocalMonthKeys) {
@@ -2067,6 +2300,17 @@
         }
       } catch (_) {}
     }
+    // 口座も移行
+    if (window.getLocalAccounts) {
+      try {
+        const snap = await getDoc(accountsRef());
+        if (!snap.exists()) {
+          const local = window.getLocalAccounts();
+          const list = local ? JSON.parse(local) : [];
+          if (list.length) await setDoc(accountsRef(), { accounts: list });
+        }
+      } catch (_) {}
+    }
   }
 
   onAuthStateChanged(auth, async (user) => {
@@ -2075,9 +2319,11 @@
     if (user) {
       await migrateLocalToCloud();      // 先にローカルデータを退避してから
       if (window.onCloudReady) window.onCloudReady();
+      window.cloudFetchAllMonths();     // 全期間を取得（口座残高を正確に）
     } else {
       if (unsub) { unsub(); unsub = null; subKey = null; }
       if (assetsUnsub) { assetsUnsub(); assetsUnsub = null; }
+      if (accountsUnsub) { accountsUnsub(); accountsUnsub = null; }
     }
   });
 </script>
