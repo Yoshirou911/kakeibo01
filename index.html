@@ -1189,6 +1189,19 @@
       </div>
     </div>
 
+    <div class="section-header" style="margin-top:24px;">
+      <div class="section-title">データのバックアップ</div>
+      <div class="section-rule"></div>
+    </div>
+    <div class="acct-card">
+      <div class="acct-add-row">
+        <button onclick="exportData()" style="flex:1;">⬇ 書き出し</button>
+        <button onclick="triggerImport()" style="flex:1;">⬆ 読み込み</button>
+      </div>
+      <input type="file" id="import-input" accept="application/json,.json" style="display:none" onchange="handleImportFile(event)">
+      <div class="acct-hint">この端末の家計簿データ（取引・口座・投資）をファイルに保存／復元します。</div>
+    </div>
+
   </div>
 </div>
 
@@ -1213,6 +1226,12 @@
   let editingId = null;              // 編集中の取引ID（nullなら新規追加）
 
   function pad2(n) { return String(n).padStart(2, '0'); }
+
+  // ユーザー入力をHTMLに埋め込む前にエスケープ（表示崩れ・注入を防ぐ）
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+      ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+  }
 
   const WEEKDAYS = ['日','月','火','水','木','金','土'];
 
@@ -1550,6 +1569,65 @@
     if (b) b.disabled = undoStack.length === 0;
   }
 
+  /* ===== データのバックアップ（書き出し／読み込み） ===== */
+  // 価格キャッシュ(kakeibo-prices)以外の kakeibo- 系キーをすべて書き出す
+  function exportData() {
+    const data = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.indexOf('kakeibo') === 0 && k !== 'kakeibo-prices') data[k] = localStorage.getItem(k);
+    }
+    const payload = { app: 'kakeibo', version: 1, exportedAt: new Date().toISOString(), data };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'kakeibo-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function triggerImport() {
+    document.getElementById('import-input').click();
+  }
+
+  function handleImportFile(e) {
+    const file = e.target.files[0];
+    e.target.value = '';   // 同じファイルを選び直せるようにリセット
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function() {
+      let obj;
+      try { obj = JSON.parse(reader.result); }
+      catch (_) { alert('ファイルを読み込めませんでした（JSON形式ではありません）'); return; }
+      const data = (obj && obj.data) ? obj.data : obj;
+      const keys = Object.keys(data || {}).filter(k => k.indexOf('kakeibo') === 0);
+      if (!keys.length) { alert('家計簿のバックアップデータが見つかりませんでした'); return; }
+      if (!confirm('バックアップを読み込みます。\nこの端末の現在のデータは上書きされます。よろしいですか？')) return;
+
+      keys.forEach(k => {
+        const v = typeof data[k] === 'string' ? data[k] : JSON.stringify(data[k]);
+        localStorage.setItem(k, v);
+        // ログイン中ならクラウドへも反映
+        if (/^kakeibo-\d{4}-\d{2}$/.test(k) && window.cloudSaveMonth) {
+          try { window.cloudSaveMonth(k, JSON.parse(v)); } catch (_) {}
+        }
+      });
+      if (window.cloudSaveAssets)   { try { const a = localStorage.getItem('kakeibo-assets');   if (a) window.cloudSaveAssets(JSON.parse(a)); } catch (_) {} }
+      if (window.cloudSaveAccounts) { try { const a = localStorage.getItem('kakeibo-accounts'); if (a) window.cloudSaveAccounts(JSON.parse(a)); } catch (_) {} }
+
+      // 画面を再構築
+      undoStack = [];
+      updateUndoBtn();
+      loadAccounts();
+      loadAssets();
+      loadData();
+      updatePrices(false);
+      alert('読み込みが完了しました（' + keys.length + '件のデータ）');
+    };
+    reader.readAsText(file);
+  }
+
   /* ===== クラウド同期（Firebase）との橋渡し ===== */
   let cloudUserName = null;
 
@@ -1725,8 +1803,8 @@
       return `
         <div class="asset-item">
           <div class="asset-item-info">
-            <div class="asset-name">${a.name}</div>
-            <div class="asset-sub">${a.symbol} · 基準 ${fmt(a.baseValue)}</div>
+            <div class="asset-name">${escapeHtml(a.name)}</div>
+            <div class="asset-sub">${escapeHtml(a.symbol)} · 基準 ${fmt(a.baseValue)}</div>
           </div>
           <div class="asset-vals">
             <div class="asset-val">${fmt(val)}</div>
@@ -1825,7 +1903,7 @@
     const sel = document.getElementById('input-acct');
     if (!sel) return;
     const cur = sel.value;
-    sel.innerHTML = accounts.map(a => '<option value="' + a.name + '">' + a.name + '</option>').join('');
+    sel.innerHTML = accounts.map(a => '<option value="' + escapeHtml(a.name) + '">' + escapeHtml(a.name) + '</option>').join('');
     if (cur && accounts.some(a => a.name === cur)) sel.value = cur;
   }
 
@@ -1859,8 +1937,29 @@
     const a = accounts.find(x => x.id === id);
     if (!a) return;
     if (!confirm(a.name + ' を削除しますか？\n（この口座の取引は「未分類」として残ります）')) return;
+
+    // この口座名の取引を全月で「未分類」へ付け替える
+    // （付け替えないと、どの口座にも一致せず残高表示から消えてしまうため）
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^kakeibo-\d{4}-\d{2}$/.test(k)) keys.push(k);
+    }
+    keys.forEach(k => {
+      let arr;
+      try { arr = JSON.parse(localStorage.getItem(k)) || []; } catch (_) { return; }
+      let changed = false;
+      arr.forEach(t => { if (t.acct === a.name) { t.acct = '未分類'; changed = true; } });
+      if (changed) {
+        localStorage.setItem(k, JSON.stringify(arr));
+        if (window.cloudSaveMonth) window.cloudSaveMonth(k, arr);
+        if (k === storageKey()) transactions = arr;
+      }
+    });
+
     accounts = accounts.filter(x => x.id !== id);
     saveAccounts();
+    render();
   }
 
   // 未分類の取引をまとめて指定口座へ振り分け
@@ -2029,7 +2128,7 @@
       rows.push(
         '<div class="acct-item">' +
           '<div class="acct-item-info">' +
-            '<div class="acct-name">' + a.name + '</div>' +
+            '<div class="acct-name">' + escapeHtml(a.name) + '</div>' +
             '<div class="acct-sub">初期 ' + fmt(a.initial) + ' ・ +' + fmt(t.income) + ' / −' + fmt(t.expense) + '</div>' +
           '</div>' +
           '<div class="acct-bal" style="color:' + (bal < 0 ? 'var(--expense)' : 'var(--text)') + '">' + (bal < 0 ? '−' : '') + fmt(bal) + '</div>' +
@@ -2212,8 +2311,8 @@
         <div class="tx-item">
           <div class="tx-icon ${t.type}">${CAT_ICONS[t.cat] || '📦'}</div>
           <div class="tx-info">
-            <div class="tx-name">${t.name}</div>
-            <div class="tx-meta">${t.cat}${t.acct ? ' · ' + t.acct : ''} · ${t.date}</div>
+            <div class="tx-name">${escapeHtml(t.name)}</div>
+            <div class="tx-meta">${escapeHtml(t.cat)}${t.acct ? ' · ' + escapeHtml(t.acct) : ''} · ${escapeHtml(t.date)}</div>
           </div>
           <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '−'}${fmt(t.amount)}</div>
           <button class="tx-edit" onclick="startEdit(${t.id})" title="編集">✎</button>
@@ -2234,7 +2333,7 @@
 
     document.getElementById('bar-wrap').innerHTML = sorted.map(([cat, val]) => `
       <div class="bar-row">
-        <div class="bar-label">${cat}</div>
+        <div class="bar-label">${escapeHtml(cat)}</div>
         <div class="bar-track">
           <div class="bar-fill" style="width:${Math.round(val / max * 100)}%; background:${CAT_COLORS[cat] || '#888'};"></div>
         </div>
