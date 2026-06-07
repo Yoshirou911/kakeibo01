@@ -108,6 +108,35 @@
       color: var(--gold);
     }
 
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .auth-btn {
+      padding: 6px 14px;
+      border: 1px solid var(--border-med);
+      border-radius: 99px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-2);
+      font-size: 12px;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.15s;
+    }
+    .auth-btn:hover {
+      background: rgba(255,255,255,0.14);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.25);
+    }
+    .auth-btn.signed-in {
+      color: var(--income);
+      border-color: rgba(111,207,151,0.4);
+      background: rgba(111,207,151,0.1);
+    }
+
     .month-nav {
       display: flex;
       align-items: center;
@@ -530,6 +559,25 @@
       background: var(--border);
     }
 
+    .undo-btn {
+      flex-shrink: 0;
+      padding: 5px 13px;
+      border: 1px solid var(--border-med);
+      border-radius: 99px;
+      background: rgba(255,255,255,0.06);
+      color: var(--text-2);
+      font-size: 11px;
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .undo-btn:hover:not(:disabled) {
+      background: rgba(255,255,255,0.14);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.25);
+    }
+    .undo-btn:disabled { opacity: 0.3; cursor: default; }
+
     /* 取引リスト */
     .tx-list { display: flex; flex-direction: column; gap: 4px; }
 
@@ -764,7 +812,10 @@
     }
 
     @media (max-width: 500px) {
-      .app-header { padding: 0 16px; }
+      .app-header { padding: 0 12px; }
+      .auth-btn { padding: 5px 10px; font-size: 11px; }
+      .month-label { min-width: 72px; font-size: 12px; }
+      .header-right { gap: 6px; }
       .container { padding: 20px 12px 60px; }
       .summary-grid { gap: 8px; }
       .metric-value { font-size: 19px; }
@@ -783,10 +834,13 @@
 <div class="app-wrap">
   <header class="app-header">
     <div class="app-title">Ka<em>ke</em>ibo</div>
-    <div class="month-nav">
-      <button onclick="changeMonth(-1)">&#8249;</button>
-      <span class="month-label" id="month-label"></span>
-      <button onclick="changeMonth(1)">&#8250;</button>
+    <div class="header-right">
+      <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()">ログイン</button>
+      <div class="month-nav">
+        <button onclick="changeMonth(-1)">&#8249;</button>
+        <span class="month-label" id="month-label"></span>
+        <button onclick="changeMonth(1)">&#8250;</button>
+      </div>
     </div>
   </header>
 
@@ -868,6 +922,7 @@
     <div class="section-header">
       <div class="section-title">今月の取引</div>
       <div class="section-rule"></div>
+      <button class="undo-btn" id="undo-btn" onclick="undo()" disabled>↩ 取消</button>
     </div>
     <div class="tx-list" id="tx-list"></div>
 
@@ -915,6 +970,7 @@
   let currentYear, currentMonth;
   let selectedDate;                  // 選択中の日付 'YYYY-MM-DD'
   let calViewYear, calViewMonth;     // カレンダー表示中の年月
+  let undoStack = [];                // 取消し用の操作履歴
 
   function pad2(n) { return String(n).padStart(2, '0'); }
 
@@ -1019,7 +1075,7 @@
     });
   }
 
-  // 画像を縮小した canvas を返す（OCRの速度向上）。長辺を maxDim に収める
+  // 画像を縮小し、グレースケール＋コントラスト強調した canvas を返す（OCR精度向上）
   function imageToCanvas(file, maxDim) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -1033,7 +1089,21 @@
         }
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
-        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        // 前処理：グレースケール化＋コントラストを上げて文字をくっきりさせる
+        try {
+          const id = ctx.getImageData(0, 0, w, h);
+          const d = id.data;
+          const contrast = 1.6;
+          for (let i = 0; i < d.length; i += 4) {
+            let g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            g = (g - 128) * contrast + 128;
+            g = g < 0 ? 0 : g > 255 ? 255 : g;
+            d[i] = d[i + 1] = d[i + 2] = g;
+          }
+          ctx.putImageData(id, 0, 0);
+        } catch (_) { /* 前処理できなくても元画像でOCRを続行 */ }
         resolve(canvas);
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
@@ -1052,17 +1122,21 @@
     btn.disabled = true;
     txt.textContent = '読み取り中… （初回は準備に時間がかかります）';
 
+    let worker;
     try {
       await loadTesseract();
-      const canvas = await imageToCanvas(file, 1600);
-      const result = await window.Tesseract.recognize(canvas, 'jpn', {
+      const canvas = await imageToCanvas(file, 2000);
+      worker = await window.Tesseract.createWorker('jpn', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
             txt.textContent = '読み取り中… ' + Math.round(m.progress * 100) + '%';
           }
         }
       });
-      const parsed = parseReceiptText(result.data.text || '');
+      // PSM 4 = 段組み（レシートのような縦並びテキスト）向けの認識モード
+      await worker.setParameters({ tessedit_pageseg_mode: '4' });
+      const { data } = await worker.recognize(canvas);
+      const parsed = parseReceiptText(data.text || '');
       applyExtracted(parsed);
       txt.textContent = '読み取り完了 ✓ 内容を確認して追加';
       setTimeout(() => { txt.textContent = original; }, 3500);
@@ -1070,6 +1144,7 @@
       alert('読み取りに失敗しました：\n' + (err.message || err));
       txt.textContent = original;
     } finally {
+      if (worker) { try { await worker.terminate(); } catch (_) {} }
       btn.disabled = false;
     }
   }
@@ -1087,7 +1162,7 @@
       const nums = (n.match(/[0-9][0-9,]*/g) || [])
         .map(x => parseInt(x.replace(/,/g, ''), 10))
         .filter(x => x >= 10 && x <= 9999999);
-      if (/合\s*計|税込|お買上|ご請求|total/i.test(n) && nums.length) {
+      if (/合\s*計|お会計|お支払|税込|お買上|ご請求|total/i.test(n) && !/小\s*計/.test(n) && nums.length) {
         totalAmount = Math.max(totalAmount, Math.max(...nums));
       }
       allAmounts.push(...nums);
@@ -1155,10 +1230,105 @@
     const saved = localStorage.getItem(storageKey());
     transactions = saved ? JSON.parse(saved) : [];
     render();
+    syncCloudForCurrentView();
   }
 
   function saveData() {
     localStorage.setItem(storageKey(), JSON.stringify(transactions));
+    if (window.cloudSaveMonth) window.cloudSaveMonth(storageKey(), transactions);
+  }
+
+  // 変更前の状態を記録（取消し用）
+  function pushUndo() {
+    undoStack.push({ y: currentYear, m: currentMonth, data: JSON.stringify(transactions) });
+    if (undoStack.length > 30) undoStack.shift();
+    updateUndoBtn();
+  }
+
+  // 直前の操作を取り消す
+  function undo() {
+    if (!undoStack.length) return;
+    const snap = undoStack.pop();
+    currentYear = snap.y;
+    currentMonth = snap.m;
+    transactions = JSON.parse(snap.data);
+    saveData();
+    render();
+    updateUndoBtn();
+  }
+
+  function updateUndoBtn() {
+    const b = document.getElementById('undo-btn');
+    if (b) b.disabled = undoStack.length === 0;
+  }
+
+  /* ===== クラウド同期（Firebase）との橋渡し ===== */
+  let cloudUserName = null;
+
+  // トレンドグラフ用：直近6ヶ月分のキー
+  function trendMonthKeys() {
+    const keys = [];
+    for (let i = 5; i >= 0; i--) {
+      let y = currentYear, m = currentMonth - i;
+      while (m < 0) { m += 12; y--; }
+      keys.push('kakeibo-' + y + '-' + pad2(m + 1));
+    }
+    return keys;
+  }
+
+  // 現在の表示月＋トレンド月をクラウドと同期
+  function syncCloudForCurrentView() {
+    if (!cloudUserName) return;
+    if (window.cloudSubscribeMonth) window.cloudSubscribeMonth(storageKey());
+    if (window.cloudFetchMonths) window.cloudFetchMonths(trendMonthKeys());
+  }
+
+  // Firebaseモジュールから呼ばれる：クラウドのデータを画面に反映
+  window.applyCloudData = function(monthKey, txs) {
+    localStorage.setItem(monthKey, JSON.stringify(txs));
+    if (monthKey === storageKey()) transactions = txs;
+    render();
+  };
+
+  // 既存のローカルデータをクラウドへ移行するために参照させる
+  window.getLocalMonthKeys = function() {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^kakeibo-\d{4}-\d{2}$/.test(k)) keys.push(k);
+    }
+    return keys;
+  };
+  window.getLocalMonth = function(key) { return localStorage.getItem(key); };
+
+  // ログイン状態が変わったときのボタン表示更新（Firebaseモジュールから呼ばれる）
+  window.onAuthChangeUI = function(user) {
+    cloudUserName = user ? (user.displayName || user.email || 'ユーザー') : null;
+    const btn = document.getElementById('auth-btn');
+    if (!btn) return;
+    if (user) {
+      const nm = user.displayName ? user.displayName.split(' ')[0] : '同期中';
+      btn.textContent = '✓ ' + nm;
+      btn.classList.add('signed-in');
+    } else {
+      btn.textContent = 'ログイン';
+      btn.classList.remove('signed-in');
+    }
+  };
+
+  // ローカル→クラウド移行が終わったら同期開始（Firebaseモジュールから呼ばれる）
+  window.onCloudReady = function() { syncCloudForCurrentView(); };
+
+  function handleAuthClick() {
+    if (cloudUserName) {
+      if (confirm('ログアウトしますか？\n（この端末での自動同期が止まります。データはクラウドに残ります）')) {
+        if (window.cloudSignOut) window.cloudSignOut();
+      }
+    } else if (window.cloudSignIn) {
+      window.cloudSignIn();
+    } else {
+      alert('同期機能を準備中です。数秒待ってからもう一度お試しください。');
+    }
   }
 
   function changeMonth(d) {
@@ -1201,6 +1371,7 @@
       document.getElementById('input-name').focus();
       return;
     }
+    pushUndo();
     transactions.unshift({ id: Date.now(), type: currentType, name, amount, cat, date });
     saveData();
     document.getElementById('input-name').value = '';
@@ -1209,7 +1380,7 @@
   }
 
   function deleteTransaction(id) {
-    if (!confirm('この取引を削除しますか？')) return;
+    pushUndo();
     transactions = transactions.filter(t => t.id !== id);
     saveData();
     render();
@@ -1389,6 +1560,98 @@
       navigator.serviceWorker.register('sw.js').catch(function() {});
     });
   }
+</script>
+
+<!-- クラウド同期（Firebase）: Googleログインで本人だけがアクセス -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+  import { getFirestore, doc, getDoc, setDoc, onSnapshot }
+    from "https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDye0m0ZFsIwoxbpvT4U6XnVjcPtdvEgqw",
+    authDomain: "kakeibo01-43ac9.firebaseapp.com",
+    projectId: "kakeibo01-43ac9",
+    storageBucket: "kakeibo01-43ac9.firebasestorage.app",
+    messagingSenderId: "938449266092",
+    appId: "1:938449266092:web:a830a52f77c5c75e864609",
+    measurementId: "G-F0QKQT2YHK"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const provider = new GoogleAuthProvider();
+
+  let uid = null;
+  let unsub = null;     // 現在購読中の月リスナー
+  let subKey = null;    // 購読中の月キー
+
+  const monthRef = (key) => doc(db, 'users', uid, 'months', key);
+
+  window.cloudSignIn  = () => signInWithPopup(auth, provider)
+    .catch(e => alert('ログインに失敗しました：\n' + e.message));
+  window.cloudSignOut = () => signOut(auth);
+
+  // 月データをクラウドに保存
+  window.cloudSaveMonth = (key, txs) => {
+    if (!uid) return;
+    setDoc(monthRef(key), { transactions: txs }).catch(() => {});
+  };
+
+  // 現在の月をリアルタイム購読（端末間で即同期）
+  window.cloudSubscribeMonth = (key) => {
+    if (!uid) return;
+    if (subKey === key && unsub) return;
+    if (unsub) { unsub(); unsub = null; }
+    subKey = key;
+    unsub = onSnapshot(monthRef(key), (snap) => {
+      const txs = snap.exists() ? (snap.data().transactions || []) : [];
+      if (window.applyCloudData) window.applyCloudData(key, txs);
+    }, () => {});
+  };
+
+  // トレンド用に複数月をまとめて取得
+  window.cloudFetchMonths = async (keys) => {
+    if (!uid) return;
+    for (const key of keys) {
+      if (key === subKey) continue;  // 現在の月は購読済み
+      try {
+        const snap = await getDoc(monthRef(key));
+        if (snap.exists() && window.applyCloudData) {
+          window.applyCloudData(key, snap.data().transactions || []);
+        }
+      } catch (_) {}
+    }
+  };
+
+  // 初回ログイン時：この端末のローカルデータをクラウドへ移行（未登録の月だけ）
+  async function migrateLocalToCloud() {
+    if (!window.getLocalMonthKeys) return;
+    for (const key of window.getLocalMonthKeys()) {
+      try {
+        const snap = await getDoc(monthRef(key));
+        if (!snap.exists()) {
+          const local = window.getLocalMonth(key);
+          const txs = local ? JSON.parse(local) : [];
+          if (txs.length) await setDoc(monthRef(key), { transactions: txs });
+        }
+      } catch (_) {}
+    }
+  }
+
+  onAuthStateChanged(auth, async (user) => {
+    uid = user ? user.uid : null;
+    if (window.onAuthChangeUI) window.onAuthChangeUI(user);
+    if (user) {
+      await migrateLocalToCloud();      // 先にローカルデータを退避してから
+      if (window.onCloudReady) window.onCloudReady();
+    } else if (unsub) {
+      unsub(); unsub = null; subKey = null;
+    }
+  });
 </script>
 </body>
 </html>
