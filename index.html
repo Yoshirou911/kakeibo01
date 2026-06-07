@@ -252,6 +252,12 @@
       color: var(--text-3); font-size: 12px; border-radius: 6px; transition: all 0.15s;
     }
     .acct-actions button:hover { background: rgba(255,255,255,0.1); color: var(--text); }
+    .acct-actions .acct-assign {
+      width: auto; padding: 0 10px; font-size: 11px; white-space: nowrap;
+      color: var(--text-2); border: 1px solid var(--border-med); background: rgba(255,255,255,0.06);
+      font-family: 'DM Sans', 'Noto Sans JP', sans-serif;
+    }
+    .acct-actions .acct-assign:hover { background: rgba(255,255,255,0.14); color: var(--text); }
     .acct-manage { margin-top: 12px; }
     .acct-add-row { display: flex; gap: 8px; }
     .acct-add-row input {
@@ -1814,6 +1820,41 @@
     saveAccounts();
   }
 
+  // 未分類の取引をまとめて指定口座へ振り分け
+  function assignUnclassified() {
+    if (!accounts.length) return;
+    let name;
+    if (accounts.length === 1) {
+      name = accounts[0].name;
+      if (!confirm('未分類の取引をすべて「' + name + '」に振り分けますか？')) return;
+    } else {
+      const menu = accounts.map((a, i) => (i + 1) + ': ' + a.name).join('\n');
+      const input = prompt('未分類の取引をどの口座に振り分けますか？\n番号を入力してください：\n' + menu, '1');
+      if (input == null) return;
+      const idx = parseInt(input) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= accounts.length) { alert('番号が正しくありません'); return; }
+      name = accounts[idx].name;
+    }
+    // 全月のキーを集める
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^kakeibo-\d{4}-\d{2}$/.test(k)) keys.push(k);
+    }
+    pushUndoKeys(keys);   // 取消し用に全月を記録
+    keys.forEach(k => {
+      let arr;
+      try { arr = JSON.parse(localStorage.getItem(k)) || []; } catch (_) { return; }
+      let changed = false;
+      arr.forEach(t => { if (!t.acct || t.acct === '未分類') { t.acct = name; changed = true; } });
+      if (changed) {
+        localStorage.setItem(k, JSON.stringify(arr));
+        if (window.cloudSaveMonth) window.cloudSaveMonth(k, arr);
+      }
+    });
+    loadData();
+  }
+
   // すべての月の取引から口座ごとの収入・支出を集計
   function computeAccountTotals() {
     const totals = {};   // 口座名 -> { income, expense }
@@ -1866,6 +1907,7 @@
             '<div class="acct-sub">口座未設定 ・ +' + fmt(t.income) + ' / −' + fmt(t.expense) + '</div>' +
           '</div>' +
           '<div class="acct-bal">' + (bal < 0 ? '−' : '') + fmt(bal) + '</div>' +
+          '<div class="acct-actions"><button class="acct-assign" onclick="assignUnclassified()">口座へ</button></div>' +
         '</div>'
       );
     }
