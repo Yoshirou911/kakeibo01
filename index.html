@@ -2277,6 +2277,7 @@
     if (window.cloudSaveAccounts) window.cloudSaveAccounts(accounts);
     populateAcctSelect();
     renderAccounts();
+    renderNetworth();
   }
 
   window.applyCloudAccounts = function(list) {
@@ -2317,7 +2318,7 @@
     if (!a) return;
     const input = prompt(a.name + ' の初期残高（円）を入力してください', a.initial);
     if (input == null) return;
-    a.initial = parseInt(input) || 0;
+    a.initial = parseHalf(input);
     saveAccounts();
   }
 
