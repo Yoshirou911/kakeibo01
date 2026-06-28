@@ -1272,7 +1272,7 @@
       <div class="acct-manage" id="acct-manage" style="display:none;">
         <div class="acct-add-row">
           <input id="acct-name" placeholder="口座名（例：楽天銀行）">
-          <input id="acct-initial" type="number" placeholder="初期残高（円）">
+          <input id="acct-initial" type="text" inputmode="numeric" placeholder="初期残高（円）" oninput="this.value=toHalf(this.value)">
           <button onclick="addAccount()">追加</button>
         </div>
         <div class="acct-hint">残高 = 初期残高 ＋ これまでの収入 − 支出</div>
@@ -1297,7 +1297,7 @@
         </div>
         <div class="form-group">
           <label>金額（円）</label>
-          <input type="number" id="input-amount" placeholder="0" min="0">
+          <input type="text" inputmode="numeric" id="input-amount" placeholder="0" oninput="this.value=toHalf(this.value)">
         </div>
       </div>
       <div class="form-group" style="margin-bottom:12px;">
@@ -1409,7 +1409,7 @@
           <div class="budget-alert" id="budget-alert">予算を超えています！支出を見直しましょう。</div>
         </div>
         <div class="budget-input-row" id="budget-input-row" style="display:none;">
-          <input type="number" id="budget-input" placeholder="月の予算（円）" min="0">
+          <input type="text" inputmode="numeric" id="budget-input" placeholder="月の予算（円）" oninput="this.value=toHalf(this.value)">
           <button class="budget-save-btn" onclick="saveBudget()">保存</button>
         </div>
       </div>
@@ -1481,7 +1481,7 @@
               autocomplete="off" oninput="onFundSearch(this.value)" onfocus="showFundDropdown()">
             <div class="fund-dropdown" id="fund-dropdown" style="display:none;"></div>
           </div>
-          <input type="number" id="asset-value" placeholder="評価額（円）" min="0" style="flex:0 0 120px;">
+          <input type="text" inputmode="numeric" id="asset-value" placeholder="評価額（円）" style="flex:0 0 120px;" oninput="this.value=toHalf(this.value)">
           <button onclick="addAsset()">追加</button>
         </div>
       </div>
@@ -1565,6 +1565,15 @@
   let editingId = null;              // 編集中の取引ID（nullなら新規追加）
 
   function pad2(n) { return String(n).padStart(2, '0'); }
+
+  // 全角→半角変換（数字・記号）
+  function toHalf(s) {
+    return String(s)
+      .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+      .replace(/[，,　 ]/g, '')   // 全角コンマ・全角スペース除去
+      .replace(/[^\d.-]/g, '');   // 数字・小数点・マイナス以外除去
+  }
+  function parseHalf(s) { return parseInt(toHalf(s), 10) || 0; }
 
   const WEEKDAYS = ['日','月','火','水','木','金','土'];
 
@@ -2204,7 +2213,7 @@
   async function addAsset() {
     if (!selectedFund) { document.getElementById('fund-search').focus(); return; }
     const { symbol, name } = selectedFund;
-    const value = parseInt(document.getElementById('asset-value').value);
+    const value = parseHalf(document.getElementById('asset-value').value);
     if (!value || value <= 0) { document.getElementById('asset-value').focus(); return; }
     const jpyAsset = symbol.endsWith('.T');
     setAssetStatus('価格を取得中…');
@@ -2296,7 +2305,7 @@
 
   function addAccount() {
     const name = document.getElementById('acct-name').value.trim();
-    const initial = parseInt(document.getElementById('acct-initial').value) || 0;
+    const initial = parseHalf(document.getElementById('acct-initial').value);
     if (!name) { document.getElementById('acct-name').focus(); return; }
     if (accounts.some(a => a.name === name)) { alert('同じ名前の口座があります'); return; }
     if (!isPremium && accounts.length >= FREE_ACCOUNTS) { showPremiumModal(); return; }
@@ -2524,7 +2533,7 @@
 
   function addTransaction() {
     const name   = document.getElementById('input-name').value.trim();
-    const amount = parseInt(document.getElementById('input-amount').value);
+    const amount = parseHalf(document.getElementById('input-amount').value);
     const cat    = document.getElementById('input-cat').value;
     const acct   = document.getElementById('input-acct').value;
     const date   = document.getElementById('input-date').value;
@@ -2745,7 +2754,7 @@
     monthBudget = parseInt(localStorage.getItem('kakeibo-budget') || '0', 10);
   }
   function saveBudget() {
-    const val = parseInt(document.getElementById('budget-input').value || '0', 10);
+    const val = parseHalf(document.getElementById('budget-input').value);
     monthBudget = val > 0 ? val : 0;
     localStorage.setItem('kakeibo-budget', monthBudget);
     toggleBudgetEdit();
