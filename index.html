@@ -184,9 +184,12 @@
     /* サマリーカード */
     .summary-grid {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 12px;
       margin-bottom: 24px;
+    }
+    .metric.wide {
+      grid-column: span 2;
     }
 
     .metric {
@@ -1250,16 +1253,16 @@
 
     <div class="summary-grid">
       <div class="metric">
-        <div class="metric-label">収入</div>
+        <div class="metric-label">収入（今月）</div>
         <div class="metric-value income" id="total-income">¥0</div>
       </div>
       <div class="metric">
-        <div class="metric-label">支出</div>
+        <div class="metric-label">支出（今月）</div>
         <div class="metric-value expense" id="total-expense">¥0</div>
       </div>
-      <div class="metric">
-        <div class="metric-label">残高</div>
-        <div class="metric-value balance" id="total-balance">¥0</div>
+      <div class="metric wide">
+        <div class="metric-label">資産（口座合計）</div>
+        <div class="metric-value" id="total-balance">¥0</div>
       </div>
     </div>
 
