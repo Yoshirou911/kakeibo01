@@ -2634,8 +2634,14 @@
     document.getElementById('total-income').textContent  = fmt(income);
     document.getElementById('total-expense').textContent = fmt(expense);
     const balEl = document.getElementById('total-balance');
-    balEl.textContent = (balance >= 0 ? '' : '−') + fmt(balance);
-    balEl.style.color = balance >= 0 ? 'var(--text)' : 'var(--expense)';
+    // 残高 = 全口座残高の合計
+    const acctTotals = computeAccountTotals();
+    const totalAcctBal = accounts.reduce((s, a) => {
+      const t = acctTotals[a.name] || { income: 0, expense: 0 };
+      return s + a.initial + t.income - t.expense;
+    }, 0);
+    balEl.textContent = (totalAcctBal < 0 ? '−' : '') + fmt(Math.abs(totalAcctBal));
+    balEl.style.color = totalAcctBal >= 0 ? 'var(--text)' : 'var(--expense)';
 
     renderTrend();
     renderAccounts();
