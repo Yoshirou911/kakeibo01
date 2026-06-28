@@ -1521,13 +1521,10 @@
   const FREE_MONTHS   = 3;   // 無料ユーザーが見られる月数
   const FREE_ACCOUNTS = 1;   // 無料ユーザーの口座上限
 
-  let isPremium = false;
+  let isPremium = true;   // オーナー特権
 
   function loadPremium() {
-    const cached = localStorage.getItem('kakeibo-premium');
-    if (cached) {
-      try { isPremium = JSON.parse(cached).active === true; } catch (_) {}
-    }
+    isPremium = true;
   }
   function showPremiumModal() {
     document.getElementById('premium-overlay').style.display = 'flex';
