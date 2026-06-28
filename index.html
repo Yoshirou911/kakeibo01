@@ -2316,9 +2316,14 @@
   function editAccountInitial(id) {
     const a = accounts.find(x => x.id === id);
     if (!a) return;
-    const input = prompt(a.name + ' の初期残高（円）を入力してください', a.initial);
+    const totals = computeAccountTotals();
+    const t = totals[a.name] || { income: 0, expense: 0 };
+    const currentBal = a.initial + t.income - t.expense;
+    const input = prompt(a.name + ' の現在の残高（円）を入力してください', currentBal);
     if (input == null) return;
-    a.initial = parseHalf(input);
+    const newBal = parseHalf(input);
+    // 残高が指定値になるよう初期残高を逆算
+    a.initial = newBal - t.income + t.expense;
     saveAccounts();
   }
 
