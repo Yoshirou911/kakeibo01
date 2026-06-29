@@ -755,6 +755,14 @@
       background: var(--border);
     }
 
+    .mf-import-btn {
+      flex-shrink: 0; padding: 5px 12px;
+      border: 1px solid var(--border-med); border-radius: 99px;
+      background: rgba(255,255,255,0.06); color: var(--text-2);
+      font-size: 12px; cursor: pointer; font-family: inherit;
+      transition: all 0.2s; white-space: nowrap;
+    }
+    .mf-import-btn:hover { border-color: var(--gold); color: var(--gold); }
     .undo-btn {
       flex-shrink: 0;
       padding: 5px 13px;
@@ -1381,6 +1389,10 @@
     <div class="section-header">
       <div class="section-title">今月の取引</div>
       <div class="section-rule"></div>
+      <label class="mf-import-btn" title="マネーフォワードのCSVをインポート">
+        📥 MF取込
+        <input type="file" accept=".csv" style="display:none;" onchange="importMF(event)">
+      </label>
       <button class="undo-btn" id="undo-btn" onclick="undo()" disabled>↩ 取消</button>
     </div>
     <div class="tx-list" id="tx-list"></div>
@@ -2635,6 +2647,102 @@
         <option value="その他">その他</option>
       `;
     }
+  }
+
+  /* ===== マネーフォワード CSV インポート ===== */
+  const MF_CAT_MAP = {
+    '食費': '食費', '外食': '食費',
+    '日用品': '日用品', '日用品・雑貨': '日用品', '雑貨': '日用品',
+    '交通費': '交通費', '電車': '交通費', 'バス': '交通費',
+    '娯楽': '娯楽', '娯楽・趣味': '娯楽', '趣味': '娯楽',
+    '住宅': '家賃', '家賃・地代': '家賃', '地代': '家賃',
+    '医療': '医療', '医療・薬': '医療', '薬': '医療',
+    '給与': '給与', '給与・賞与': '給与', '賞与': '給与',
+    '奨学金': '奨学金',
+    '副収入': '副収入',
+    'ATM': 'ATM', 'ATM・銀行': 'ATM',
+    'カード': 'クレジットカード', '電子マネー': 'クレジットカード',
+    'カード・電子マネー': 'クレジットカード',
+  };
+
+  function mfMapCat(mfCat, type) {
+    if (MF_CAT_MAP[mfCat]) return MF_CAT_MAP[mfCat];
+    for (const [k, v] of Object.entries(MF_CAT_MAP)) {
+      if (mfCat.includes(k)) return v;
+    }
+    return type === 'income' ? 'その他収入' : 'その他';
+  }
+
+  function mfMapAcct(mfAcct) {
+    for (const a of accounts) {
+      const n = a.name.replace(/銀行|カード|口座/g, '');
+      if (mfAcct.includes(n) || a.name.includes(mfAcct.replace(/銀行|カード|口座/g, '').trim())) {
+        return a.name;
+      }
+    }
+    return accounts[0]?.name || '';
+  }
+
+  function parseCSVLine(line) {
+    const res = []; let cur = '', q = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { q = !q; }
+      else if (c === ',' && !q) { res.push(cur.trim()); cur = ''; }
+      else cur += c;
+    }
+    res.push(cur.trim());
+    return res;
+  }
+
+  function importMF(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      const lines = e.target.result.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+      const monthMap = {};
+      let added = 0, skipped = 0, transfers = 0;
+
+      lines.forEach(line => {
+        if (!line.trim()) return;
+        const c = parseCSVLine(line);
+        if (c[0] === '計算対象' || c.length < 5) return; // ヘッダー行スキップ
+        if (c[0] === '0') return;                         // 計算対象外スキップ
+        if (c[7] === 'true') { transfers++; return; }     // 振替スキップ
+
+        const dateRaw = c[1]; // YYYY/MM/DD
+        if (!dateRaw?.match(/^\d{4}\/\d{2}\/\d{2}$/)) return;
+        const date = dateRaw.replace(/\//g, '-');
+        const name = c[2]; if (!name) return;
+        const absAmt = Math.abs(parseInt((c[3] || '0').replace(/,/g, ''), 10));
+        if (!absAmt) return;
+        const type = c[4] === '入金' ? 'income' : 'expense';
+        const cat  = mfMapCat(c[5] || '', type);
+        const acct = mfMapAcct(c[8] || '');
+
+        const key = 'kakeibo-' + date.slice(0, 4) + '-' + date.slice(5, 7);
+        if (!monthMap[key]) monthMap[key] = readMonth(key);
+
+        // 重複チェック（同じ日付・金額・内容）
+        if (monthMap[key].some(t => t.date === date && t.amount === absAmt && t.name === name)) {
+          skipped++; return;
+        }
+        monthMap[key].unshift({ id: Date.now() + Math.random(), type, name, amount: absAmt, cat, acct, date });
+        added++;
+      });
+
+      // 月ごとに保存
+      Object.entries(monthMap).forEach(([key, arr]) => {
+        writeMonth(key, arr);
+        if (key === storageKey()) transactions = arr;
+      });
+
+      render();
+      alert('📥 インポート完了！\n\n追加: ' + added + '件\n重複スキップ: ' + skipped + '件\n振替除外: ' + transfers + '件');
+      event.target.value = '';
+    };
+    reader.readAsText(file, 'UTF-8');
   }
 
   function addTransaction() {
