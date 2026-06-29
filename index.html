@@ -763,8 +763,14 @@
     .month-pick-item:hover { background: rgba(255,255,255,0.09); color: #f0ede8; }
     .month-pick-item.active { color: var(--gold); font-weight: 600; }
     .tx-filter-row {
-      display: flex; gap: 6px; margin-bottom: 10px;
+      display: flex; gap: 6px; margin-bottom: 10px; align-items: center;
     }
+    .tx-month-sel {
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border-med);
+      border-radius: 99px; color: var(--text-2); font-size: 12px; font-family: inherit;
+      padding: 5px 10px; cursor: pointer; outline: none; max-width: 110px;
+    }
+    .tx-month-sel:focus { border-color: var(--gold); }
     .tx-filter-btn {
       padding: 5px 16px; border-radius: 99px; font-size: 12px; font-family: inherit;
       border: 1px solid var(--border-med); background: rgba(255,255,255,0.05);
@@ -1447,6 +1453,8 @@
         <button class="tx-filter-btn active" id="filter-all"    onclick="setTxFilter('all')">全て</button>
         <button class="tx-filter-btn"        id="filter-income" onclick="setTxFilter('income')">収入</button>
         <button class="tx-filter-btn"        id="filter-expense" onclick="setTxFilter('expense')">支出</button>
+        <div style="flex:1;"></div>
+        <select id="tx-month-select" onchange="gotoMonthKey(this.value)" class="tx-month-sel"></select>
       </div>
       <div class="tx-list" id="tx-list"></div>
     </div>
@@ -3053,9 +3061,31 @@
     return '¥' + Math.abs(n).toLocaleString('ja-JP');
   }
 
+  function renderTxMonthSelect() {
+    const sel = document.getElementById('tx-month-select');
+    if (!sel) return;
+    const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    const cur = storageKey();
+    // データのある月を収集（現在月は必ず含める）
+    const keys = new Set([cur]);
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && /^kakeibo-\d{4}-\d{2}$/.test(k)) {
+        const arr = readMonth(k);
+        if (arr && arr.length > 0) keys.add(k);
+      }
+    }
+    const sorted = [...keys].sort().reverse();
+    sel.innerHTML = sorted.map(k => {
+      const [y, m] = k.replace('kakeibo-', '').split('-');
+      return `<option value="${k}"${k === cur ? ' selected' : ''}>${y}年${parseInt(m)}月</option>`;
+    }).join('');
+  }
+
   function render() {
     const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
     document.getElementById('month-label').textContent = currentYear + '年 ' + MONTHS[currentMonth];
+    renderTxMonthSelect();
 
     const income  = transactions.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
     const expense = transactions.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
