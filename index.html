@@ -2720,15 +2720,17 @@
         const c = parseCSVLine(line);
         if (c[0] === '計算対象' || c.length < 5) return; // ヘッダー行スキップ
         if (c[0] === '0') return;                         // 計算対象外スキップ
-        if (c[7] === 'true') { transfers++; return; }     // 振替スキップ
+        if (c[7]?.toLowerCase() === 'true') { transfers++; return; } // 振替スキップ
 
         const dateRaw = c[1]; // YYYY/MM/DD
         if (!dateRaw?.match(/^\d{4}\/\d{2}\/\d{2}$/)) return;
         const date = dateRaw.replace(/\//g, '-');
         const name = c[2]; if (!name) return;
-        const absAmt = Math.abs(parseInt((c[3] || '0').replace(/,/g, ''), 10));
+        const rawAmt = parseInt((c[3] || '0').replace(/,/g, ''), 10);
+        const absAmt = Math.abs(rawAmt);
         if (!absAmt) return;
-        const type = c[4] === '入金' ? 'income' : 'expense';
+        const inout = c[4]?.trim();
+        const type = inout === '入金' ? 'income' : inout === '出金' ? 'expense' : rawAmt >= 0 ? 'income' : 'expense';
         const cat  = mfMapCat(c[5] || '', type);
         const acct = mfMapAcct(c[8] || '');
 
