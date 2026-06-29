@@ -1393,7 +1393,7 @@
         📥 MF取込
         <input type="file" accept=".csv" style="display:none;" onchange="importMF(event)">
       </label>
-      <button class="undo-btn" onclick="clearMonthTransactions()" title="今月の取引を全削除">🗑 全削除</button>
+      <button class="undo-btn" onclick="showClearModal()" title="削除する月を選択">🗑 全削除</button>
       <button class="undo-btn" id="undo-btn" onclick="undo()" disabled>↩ 取消</button>
     </div>
     <div class="tx-list" id="tx-list"></div>
@@ -2650,12 +2650,50 @@
     }
   }
 
-  function clearMonthTransactions() {
-    const label = document.getElementById('month-label').textContent;
-    if (!confirm(label + ' の取引を全件削除しますか？\n（この操作は取り消せません）')) return;
-    transactions = [];
+  function showClearModal() {
+    const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    // データのある月を収集
+    const entries = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.match(/^kakeibo-\d{4}-\d{2}$/)) continue;
+      const arr = JSON.parse(localStorage.getItem(key) || '[]');
+      if (!arr.length) continue;
+      const [, y, m] = key.match(/^kakeibo-(\d{4})-(\d{2})$/);
+      entries.push({ key, label: y + '年' + MONTHS[parseInt(m) - 1], count: arr.length });
+    }
+    entries.sort((a, b) => b.key.localeCompare(a.key)); // 新しい順
+
+    const list = document.getElementById('clear-modal-list');
+    if (!entries.length) { alert('削除できるデータがありません'); return; }
+    list.innerHTML = entries.map(e => `
+      <label style="display:flex;align-items:center;gap:12px;padding:10px 12px;background:rgba(255,255,255,0.05);border-radius:10px;cursor:pointer;">
+        <input type="checkbox" value="${e.key}" checked style="width:16px;height:16px;accent-color:#c0a84d;">
+        <span style="flex:1;color:#f0ede8;font-size:14px;">${e.label}</span>
+        <span style="color:rgba(240,237,232,0.4);font-size:12px;">${e.count}件</span>
+      </label>`).join('');
+    document.getElementById('clear-modal-overlay').style.display = 'flex';
+  }
+
+  function closeClearModal() {
+    document.getElementById('clear-modal-overlay').style.display = 'none';
+  }
+
+  function clearModalSelectAll(checked) {
+    document.querySelectorAll('#clear-modal-list input[type=checkbox]').forEach(cb => cb.checked = checked);
+  }
+
+  function executeClear() {
+    const checked = [...document.querySelectorAll('#clear-modal-list input[type=checkbox]:checked')];
+    if (!checked.length) { alert('月を選択してください'); return; }
+    if (!confirm(checked.length + 'ヶ月分のデータを削除しますか？\n（この操作は取り消せません）')) return;
+    checked.forEach(cb => {
+      localStorage.removeItem(cb.value);
+      if (cb.value === storageKey()) transactions = [];
+    });
     saveData();
     render();
+    closeClearModal();
   }
 
   /* ===== マネーフォワード CSV インポート ===== */
@@ -3541,5 +3579,21 @@
     }
   });
 </script>
+
+<!-- 削除範囲選択モーダル -->
+<div id="clear-modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9000;display:none;align-items:center;justify-content:center;" onclick="if(event.target===this)closeClearModal()">
+  <div style="background:#1e2130;border:1px solid rgba(255,255,255,0.12);border-radius:20px;padding:28px 24px;width:min(90vw,360px);max-height:80vh;display:flex;flex-direction:column;gap:16px;">
+    <div style="font-size:16px;font-weight:600;color:#f0ede8;">🗑 削除する月を選択</div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="clearModalSelectAll(true)"  style="flex:1;padding:6px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#f0ede8;font-size:12px;cursor:pointer;">全選択</button>
+      <button onclick="clearModalSelectAll(false)" style="flex:1;padding:6px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#f0ede8;font-size:12px;cursor:pointer;">全解除</button>
+    </div>
+    <div id="clear-modal-list" style="overflow-y:auto;display:flex;flex-direction:column;gap:8px;max-height:50vh;"></div>
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button onclick="closeClearModal()" style="flex:1;padding:11px;background:rgba(255,255,255,0.07);border:1px solid rgba(255,255,255,0.12);border-radius:12px;color:#f0ede8;font-size:14px;cursor:pointer;">キャンセル</button>
+      <button onclick="executeClear()" style="flex:1;padding:11px;background:#c0392b;border:none;border-radius:12px;color:#fff;font-size:14px;font-weight:600;cursor:pointer;">削除する</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
