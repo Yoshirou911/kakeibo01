@@ -1400,7 +1400,7 @@
       <div class="form-row">
         <div class="form-group">
           <label>カテゴリ</label>
-          <select id="input-cat">
+          <select id="input-cat" onchange="updateInvestToggle()">
             <option value="給与">給与</option>
             <option value="奨学金">奨学金</option>
             <option value="副収入">副収入</option>
@@ -1431,6 +1431,13 @@
           </div>
           <input type="hidden" id="input-date">
         </div>
+      </div>
+      <div id="invest-toggle-row" style="display:none;margin-bottom:12px;padding:10px 14px;background:rgba(192,168,77,0.1);border:1px solid rgba(192,168,77,0.3);border-radius:12px;">
+        <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
+          <input type="checkbox" id="input-as-investment" checked style="width:16px;height:16px;accent-color:#c0a84d;">
+          <span style="font-size:13px;color:#e8d87a;font-weight:500;">📈 資産として計上する</span>
+        </label>
+        <div style="font-size:11px;color:rgba(240,237,232,0.45);margin-top:4px;margin-left:26px;">ONのとき口座残高から差し引かれず、投資として扱われます</div>
       </div>
       <button class="add-btn" id="submit-btn" onclick="addTransaction()">追加する</button>
       <button class="cancel-btn" id="cancel-btn" onclick="cancelEdit()" style="display:none;">編集をやめる</button>
@@ -1674,11 +1681,11 @@
   const CAT_ICONS = {
     '給与':'💼','奨学金':'🎓','副収入':'💡','その他収入':'💰',
     '食費':'🍚','交通費':'🚃','娯楽':'🎮',
-    '日用品':'🛒','家賃':'🏠','医療':'💊','ATM':'🏧','クレジットカード':'💳','その他':'📦'
+    '日用品':'🛒','家賃':'🏠','医療':'💊','ATM':'🏧','クレジットカード':'💳','投資':'📈','その他':'📦'
   };
   const CAT_COLORS = {
     '食費':'#5ba3d4','交通費':'#8b82d4','娯楽':'#d4b44a',
-    '日用品':'#d4855a','家賃':'#d45a8b','医療':'#d45a5a','ATM':'#8a9aaa','クレジットカード':'#9b59b6','その他':'#6a6a7a',
+    '日用品':'#d4855a','家賃':'#d45a8b','医療':'#d45a5a','ATM':'#8a9aaa','クレジットカード':'#9b59b6','投資':'#c0a84d','その他':'#6a6a7a',
     '給与':'#6fcf97','奨学金':'#56cfe1','副収入':'#4ab87a','その他収入':'#7fd4a4'
   };
 
@@ -2073,11 +2080,13 @@
         const sign = t.type === 'income' ? '+' : '−';
         const cls  = t.type === 'income' ? 'income' : 'expense';
         const icon = CAT_ICONS[t.cat] || '📦';
+        const investBadge = (t.cat === '投資' && t.asInvestment !== false)
+          ? '<span style="font-size:10px;color:#c0a84d;margin-left:4px;">資産計上</span>' : '';
         return `<div class="tx-item" data-id="${t.id}">
           <div class="tx-icon ${cls}">${icon}</div>
           <div class="tx-info">
             <div class="tx-name">${t.name}</div>
-            <div class="tx-meta">${t.cat}${t.acct ? ' · ' + t.acct : ''} · ${t.date}</div>
+            <div class="tx-meta">${t.cat}${investBadge}${t.acct ? ' · ' + t.acct : ''} · ${t.date}</div>
           </div>
           <div class="tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
           <button class="tx-edit" onclick="startEdit(${t.id})" title="編集">✎</button>
@@ -2723,6 +2732,8 @@
       let arr;
       try { arr = JSON.parse(localStorage.getItem(k)) || []; } catch (_) { continue; }
       arr.forEach(t => {
+        // 投資として計上する支出は口座残高から差し引かない
+        if (t.type === 'expense' && t.cat === '投資' && t.asInvestment !== false) return;
         const acc = t.acct || '未分類';
         if (!totals[acc]) totals[acc] = { income: 0, expense: 0 };
         if (t.type === 'income') totals[acc].income += t.amount;
@@ -2803,9 +2814,17 @@
         <option value="医療">医療</option>
         <option value="ATM">ATM</option>
         <option value="クレジットカード">クレジットカード</option>
+        <option value="投資">投資</option>
         <option value="その他">その他</option>
       `;
     }
+    updateInvestToggle();
+  }
+
+  function updateInvestToggle() {
+    const cat = document.getElementById('input-cat')?.value;
+    const row = document.getElementById('invest-toggle-row');
+    if (row) row.style.display = cat === '投資' ? '' : 'none';
   }
 
   function showClearModal() {
@@ -2984,15 +3003,19 @@
     }
     const targetKey = monthKeyFromDate(date);
 
+    const asInvestment = cat === '投資'
+      ? (document.getElementById('input-as-investment')?.checked !== false)
+      : undefined;
+
     if (editingId != null) {
       const curKey = storageKey();
       pushUndoKeys(curKey === targetKey ? [curKey] : [curKey, targetKey]);
-      const updated = { id: editingId, type: currentType, name, amount, cat, acct, date };
+      const updated = { id: editingId, type: currentType, name, amount, cat, acct, date,
+        ...(asInvestment !== undefined ? { asInvestment } : {}) };
       if (targetKey === curKey) {
         transactions = transactions.map(t => t.id === editingId ? updated : t);
         saveData();
       } else {
-        // 日付の月が変わった → 元の月から外して新しい月へ移動
         transactions = transactions.filter(t => t.id !== editingId);
         saveData();
         const arr = readMonth(targetKey);
@@ -3004,7 +3027,8 @@
     } else {
       pushUndoKeys([targetKey]);
       const arr = readMonth(targetKey);
-      arr.unshift({ id: Date.now(), type: currentType, name, amount, cat, acct, date });
+      arr.unshift({ id: Date.now(), type: currentType, name, amount, cat, acct, date,
+        ...(asInvestment !== undefined ? { asInvestment } : {}) });
       writeMonth(targetKey, arr);
     }
 
@@ -3023,6 +3047,9 @@
     document.getElementById('input-amount').value = t.amount;
     const catSel = document.getElementById('input-cat');
     if ([...catSel.options].some(o => o.value === t.cat)) catSel.value = t.cat;
+    updateInvestToggle();
+    const investCb = document.getElementById('input-as-investment');
+    if (investCb && t.cat === '投資') investCb.checked = t.asInvestment !== false;
     const acctSel = document.getElementById('input-acct');
     if (acctSel && t.acct && [...acctSel.options].some(o => o.value === t.acct)) acctSel.value = t.acct;
     setSelectedDate(t.date);
