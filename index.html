@@ -2700,7 +2700,9 @@
     if (!file) return;
     const reader = new FileReader();
     reader.onload = function(e) {
-      const lines = e.target.result.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+      // Shift-JIS → UTF-8 変換（マネーフォワードはShift-JIS出力）
+      const text = new TextDecoder('shift-jis').decode(e.target.result);
+      const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
       const monthMap = {};
       let added = 0, skipped = 0, transfers = 0;
 
@@ -2742,7 +2744,7 @@
       alert('📥 インポート完了！\n\n追加: ' + added + '件\n重複スキップ: ' + skipped + '件\n振替除外: ' + transfers + '件');
       event.target.value = '';
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsArrayBuffer(file);
   }
 
   function addTransaction() {
