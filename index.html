@@ -2997,10 +2997,11 @@
     const cat    = document.getElementById('input-cat').value;
     const acct   = document.getElementById('input-acct').value;
     const date   = document.getElementById('input-date').value;
-    if (!name || !amount || amount <= 0) {
-      document.getElementById('input-name').focus();
+    if (!amount || amount <= 0) {
+      document.getElementById('input-amount').focus();
       return;
     }
+    if (!name) name = cat;
     const targetKey = monthKeyFromDate(date);
 
     const asInvestment = cat === '投資'
