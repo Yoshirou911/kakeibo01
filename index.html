@@ -2062,6 +2062,9 @@
   window.getLocalAssets = function() { return localStorage.getItem('kakeibo-assets'); };
 
   async function fetchQuote(symbol) {
+    // 東証ETF（.T）はFinnhub非対応のため価格取得をスキップ
+    if (symbol.endsWith('.T')) throw new Error('JP_MANUAL');
+    // 米国ETF/株は Finnhub
     const r = await fetch('https://finnhub.io/api/v1/quote?symbol=' + symbol + '&token=' + FINNHUB_KEY);
     const j = await r.json();
     if (j && typeof j.c === 'number' && j.c > 0) return j.c;
@@ -2080,15 +2083,23 @@
   }
 
   async function updatePrices(showSpin) {
-    const symbols = [...new Set(assets.map(a => a.symbol))];
-    if (!symbols.length) { renderAssets(); return; }
+    const allSymbols = [...new Set(assets.map(a => a.symbol))];
+    if (!allSymbols.length) { renderAssets(); return; }
+    // 日本ETF（.T）はAPI非対応のためスキップ
+    const usSymbols = allSymbols.filter(s => !s.endsWith('.T'));
     const refresh = document.getElementById('asset-refresh');
     if (showSpin && refresh) refresh.classList.add('spin');
+    if (!usSymbols.length) {
+      setAssetStatus('日本ETFは⟳ボタンで手動更新してください');
+      if (refresh) refresh.classList.remove('spin');
+      renderAssets();
+      return;
+    }
     setAssetStatus('最新価格を取得中…');
     try {
-      const results = await Promise.all([fetchFx(), ...symbols.map(fetchQuote)]);
+      const results = await Promise.all([fetchFx(), ...usSymbols.map(fetchQuote)]);
       fxCache = results[0];
-      symbols.forEach((s, i) => { priceCache[s] = results[i + 1]; });
+      usSymbols.forEach((s, i) => { priceCache[s] = results[i + 1]; });
       localStorage.setItem('kakeibo-prices', JSON.stringify({ priceCache, fxCache, t: Date.now() }));
       setAssetStatus('更新: ' + new Date().toLocaleString('ja-JP'));
       renderAssets();
@@ -2305,8 +2316,16 @@
     if (!a) return;
     const input = prompt(a.name + ' の現在の評価額（円）を入力してください', a.baseValue);
     if (input == null) return;
-    const v = parseInt(input);
+    const v = parseHalf(input);
     if (!v || v <= 0) return;
+    // 日本ETF（.T）は価格APIなしで評価額を直接更新
+    if (a.symbol.endsWith('.T')) {
+      a.baseValue = v; a.basePrice = null;
+      saveAssets();
+      setAssetStatus('評価額を更新しました');
+      setTimeout(() => setAssetStatus(''), 2000);
+      return;
+    }
     setAssetStatus('価格を取得中…');
     try {
       const [price, fx] = await Promise.all([fetchQuote(a.symbol), fetchFx()]);
@@ -2315,7 +2334,11 @@
       saveAssets();
       setAssetStatus('');
     } catch (e) {
-      setAssetStatus('価格を取得できませんでした');
+      // 価格取得失敗でも評価額だけ更新
+      a.baseValue = v; a.basePrice = null;
+      saveAssets();
+      setAssetStatus('評価額を更新しました（価格追跡なし）');
+      setTimeout(() => setAssetStatus(''), 2000);
     }
   }
 
