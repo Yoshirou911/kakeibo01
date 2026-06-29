@@ -2062,18 +2062,18 @@
       list.innerHTML = `<div class="empty">${transactions.length === 0 ? '取引がありません。下の ＋ ボタンから追加してください。' : '該当する取引がありません'}</div>`;
     } else {
       list.innerHTML = filtered.map(t => {
-        const sign  = t.type === 'income' ? '+' : '-';
-        const cls   = t.type === 'income' ? 'income' : 'expense';
-        const icon  = CAT_ICONS[t.cat] || '📦';
-        const acctName = (accounts.find(a => a.id === t.acct) || {}).name || '';
+        const sign = t.type === 'income' ? '+' : '−';
+        const cls  = t.type === 'income' ? 'income' : 'expense';
+        const icon = CAT_ICONS[t.cat] || '📦';
         return `<div class="tx-item" data-id="${t.id}">
-          <div class="tx-icon">${icon}</div>
+          <div class="tx-icon ${cls}">${icon}</div>
           <div class="tx-info">
-            <div class="tx-name">${escHtml(t.name)}</div>
-            <div class="tx-sub">${t.date}${acctName ? '　' + escHtml(acctName) : ''}</div>
+            <div class="tx-name">${t.name}</div>
+            <div class="tx-meta">${t.cat}${t.acct ? ' · ' + t.acct : ''} · ${t.date}</div>
           </div>
-          <div class="tx-amount ${cls}">${sign}¥${t.amount.toLocaleString()}</div>
-          <button class="tx-edit-btn" onclick="startEdit('${t.id}')">✎</button>
+          <div class="tx-amount ${cls}">${sign}${fmt(t.amount)}</div>
+          <button class="tx-edit" onclick="startEdit(${t.id})" title="編集">✎</button>
+          <button class="tx-delete" onclick="deleteTransaction(${t.id})" title="削除">✕</button>
         </div>`;
       }).join('');
     }
@@ -3297,12 +3297,11 @@
     const container = document.getElementById('alloc-pie-container');
     if (!container) return;
 
-    // 現金（口座合計）
+    // 現金（口座合計：全月累計）
+    const acctTotals = computeAccountTotals();
     const cashTotal = accounts.reduce((s, a) => {
-      const txs = JSON.parse(localStorage.getItem(storageKey()) || '[]');
-      const inc = txs.filter(t => t.acct === a.id && t.type === 'income').reduce((x, t) => x + t.amount, 0);
-      const exp = txs.filter(t => t.acct === a.id && t.type === 'expense').reduce((x, t) => x + t.amount, 0);
-      return s + a.initial + inc - exp;
+      const t = acctTotals[a.name] || { income: 0, expense: 0 };
+      return s + a.initial + t.income - t.expense;
     }, 0);
 
     // 投資資産（各銘柄）
