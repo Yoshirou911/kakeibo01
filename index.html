@@ -3426,7 +3426,7 @@
     if (!data.some(d => d.income > 0 || d.expense > 0)) {
       el.innerHTML = '<div class="chart-empty">データがありません</div>'; return;
     }
-    const W=340, H=200, ML=48, MR=8, MT=14, MB=46;
+    const W=340, H=215, ML=48, MR=8, MT=14, MB=58;
     const CW=W-ML-MR, CH=H-MT-MB;
     const maxVal = Math.max(1, ...data.map(d => Math.max(d.income, d.expense)));
     const mag = Math.pow(10, Math.floor(Math.log10(maxVal/4)));
@@ -3444,14 +3444,35 @@
     }
     svg += `<line x1="${ML}" y1="${MT}" x2="${ML}" y2="${MT+CH}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
     svg += `<line x1="${ML}" y1="${MT+CH}" x2="${ML+CW}" y2="${MT+CH}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
-    // bars
+    // bars + click targets
     data.forEach((d,i) => {
-      const cx=ML+i*slotW+slotW/2;
-      const incH=Math.max(0,(d.income/yMax)*CH), expH=Math.max(0,(d.expense/yMax)*CH);
-      const baseY=MT+CH, op=d.y===currentYear&&d.m===currentMonth?1:0.62;
-      if(incH>0) svg+=`<rect x="${(cx-1-barW).toFixed(1)}" y="${(baseY-incH).toFixed(1)}" width="${barW}" height="${incH.toFixed(1)}" fill="#6fcf97" rx="2" opacity="${op}"/>`;
-      if(expH>0) svg+=`<rect x="${(cx+1).toFixed(1)}"   y="${(baseY-expH).toFixed(1)}" width="${barW}" height="${expH.toFixed(1)}" fill="#eb8c6e" rx="2" opacity="${op}"/>`;
-      svg+=`<text x="${cx.toFixed(1)}" y="${MT+CH+15}" text-anchor="middle" font-size="9.5" fill="rgba(240,237,232,${op===1?0.85:0.45})">${MONTHS[d.m]}</text>`;
+      const cx = ML + i*slotW + slotW/2;
+      const incH = Math.max(0,(d.income/yMax)*CH), expH = Math.max(0,(d.expense/yMax)*CH);
+      const baseY = MT + CH;
+      const isCur = d.y === currentYear && d.m === currentMonth;
+      const op = isCur ? 1 : 0.62;
+      const key = 'kakeibo-' + d.y + '-' + pad2(d.m + 1);
+      const bal = d.balance;
+      const balSign = bal >= 0 ? '+' : '−';
+      const balAbs = Math.abs(bal);
+      const balStr = balAbs >= 10000 ? balSign + '¥' + Math.round(balAbs/10000) + '万'
+                   : balSign + '¥' + balAbs.toLocaleString('ja-JP');
+      const balCol = bal >= 0 ? '#6fcf97' : '#eb8c6e';
+
+      // クリック可能な列グループ
+      svg += `<g style="cursor:pointer" onclick="gotoMonthKey('${key}');switchTab('home')">`;
+      // ホバー用透明ヒットエリア
+      svg += `<rect x="${(cx-slotW/2).toFixed(1)}" y="${MT}" width="${slotW.toFixed(1)}" height="${CH+MB}" fill="transparent"/>`;
+      // 現在月ハイライト背景
+      if (isCur) svg += `<rect x="${(cx-slotW/2+2).toFixed(1)}" y="${MT-4}" width="${(slotW-4).toFixed(1)}" height="${CH+10}" fill="rgba(255,255,255,0.04)" rx="4"/>`;
+      // バー
+      if (incH > 0) svg += `<rect x="${(cx-1-barW).toFixed(1)}" y="${(baseY-incH).toFixed(1)}" width="${barW}" height="${incH.toFixed(1)}" fill="#6fcf97" rx="2" opacity="${op}"/>`;
+      if (expH > 0) svg += `<rect x="${(cx+1).toFixed(1)}"   y="${(baseY-expH).toFixed(1)}" width="${barW}" height="${expH.toFixed(1)}" fill="#eb8c6e" rx="2" opacity="${op}"/>`;
+      // 月ラベル
+      svg += `<text x="${cx.toFixed(1)}" y="${baseY+14}" text-anchor="middle" font-size="9.5" fill="rgba(240,237,232,${isCur?0.85:0.45})" font-weight="${isCur?'600':'400'}">${MONTHS[d.m]}</text>`;
+      // 収支残高ラベル
+      if (bal !== 0) svg += `<text x="${cx.toFixed(1)}" y="${baseY+27}" text-anchor="middle" font-size="8.5" fill="${balCol}" opacity="${op}">${balStr}</text>`;
+      svg += `</g>`;
     });
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
   }
