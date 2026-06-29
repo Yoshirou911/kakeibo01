@@ -986,6 +986,33 @@
       font-size: 13px;
       padding: 28px 0;
     }
+    .monthly-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      align-items: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .monthly-row:last-child { border-bottom: none; }
+    .monthly-row:hover { background: rgba(255,255,255,0.05); }
+    .monthly-row.current-month { background: rgba(192,168,77,0.08); }
+    .monthly-row-head {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      padding: 10px 16px 8px;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      font-size: 11px;
+      color: rgba(240,237,232,0.4);
+      letter-spacing: 0.5px;
+    }
+    .monthly-month { font-size: 13px; font-weight: 500; color: var(--text); }
+    .monthly-inc  { font-size: 12px; color: var(--income); text-align: right; }
+    .monthly-exp  { font-size: 12px; color: var(--expense); text-align: right; }
+    .monthly-bal  { font-size: 12px; text-align: right; }
+    .monthly-bal.pos { color: var(--income); }
+    .monthly-bal.neg { color: var(--expense); }
 
     .trend-legend {
       display: flex;
@@ -1489,6 +1516,15 @@
       </div>
       <div class="svg-chart-card">
         <div id="report-line-chart"></div>
+      </div>
+
+      <!-- 月別サマリー -->
+      <div class="section-header" style="margin-top:8px;">
+        <div class="section-title">月別収支一覧</div>
+        <div class="section-rule"></div>
+      </div>
+      <div class="svg-chart-card" style="padding:0;overflow:hidden;">
+        <div id="monthly-summary-table"></div>
       </div>
 
     </div>
@@ -3343,6 +3379,43 @@
     el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
   }
 
+  function renderMonthlySummary() {
+    const el = document.getElementById('monthly-summary-table');
+    if (!el) return;
+    const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    const entries = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key.match(/^kakeibo-\d{4}-\d{2}$/)) continue;
+      const arr = JSON.parse(localStorage.getItem(key) || '[]');
+      const [, y, m] = key.match(/^kakeibo-(\d{4})-(\d{2})$/);
+      const income  = arr.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
+      const expense = arr.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+      if (!income && !expense) continue;
+      entries.push({ key, y: +y, m: +m - 1, income, expense });
+    }
+    if (!entries.length) {
+      el.innerHTML = '<div class="chart-empty">データがありません</div>'; return;
+    }
+    entries.sort((a, b) => b.key.localeCompare(a.key));
+    const curKey = storageKey();
+    el.innerHTML =
+      `<div class="monthly-row-head">
+        <div>月</div><div style="text-align:right">収入</div>
+        <div style="text-align:right">支出</div><div style="text-align:right">収支</div>
+      </div>` +
+      entries.map(e => {
+        const bal = e.income - e.expense;
+        const isCur = e.key === curKey;
+        return `<div class="monthly-row${isCur ? ' current-month' : ''}" onclick="gotoMonthKey('${e.key}');switchTab('home')">
+          <div class="monthly-month">${e.y}/${MONTHS[e.m]}</div>
+          <div class="monthly-inc">+${fmt(e.income)}</div>
+          <div class="monthly-exp">−${fmt(e.expense)}</div>
+          <div class="monthly-bal ${bal >= 0 ? 'pos' : 'neg'}">${bal >= 0 ? '+' : '−'}${fmt(Math.abs(bal))}</div>
+        </div>`;
+      }).join('');
+  }
+
   function renderReport() {
     const label = document.getElementById('report-month-label');
     if (label) label.textContent = document.getElementById('month-label').textContent;
@@ -3350,6 +3423,7 @@
     renderPieChart();
     renderReportBarChart();
     renderReportLineChart();
+    renderMonthlySummary();
   }
 
   init();
