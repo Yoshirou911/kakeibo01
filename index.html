@@ -755,6 +755,22 @@
       background: var(--border);
     }
 
+    .month-pick-item {
+      padding: 9px 14px; border-radius: 9px; font-size: 13px;
+      color: rgba(240,237,232,0.75); cursor: pointer; white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .month-pick-item:hover { background: rgba(255,255,255,0.09); color: #f0ede8; }
+    .month-pick-item.active { color: var(--gold); font-weight: 600; }
+    .tx-filter-row {
+      display: flex; gap: 6px; margin-bottom: 10px;
+    }
+    .tx-filter-btn {
+      padding: 5px 16px; border-radius: 99px; font-size: 12px; font-family: inherit;
+      border: 1px solid var(--border-med); background: rgba(255,255,255,0.05);
+      color: var(--text-2); cursor: pointer; transition: all 0.15s;
+    }
+    .tx-filter-btn.active { background: var(--gold); border-color: var(--gold); color: #1a1d26; font-weight: 600; }
     .mf-import-btn {
       flex-shrink: 0; padding: 5px 12px;
       border: 1px solid var(--border-med); border-radius: 99px;
@@ -1308,10 +1324,11 @@
     <div class="app-title">Ka<em>ke</em>ibo</div>
     <div class="header-right">
       <button class="auth-btn" id="auth-btn" onclick="handleAuthClick()">ログイン</button>
-      <div class="month-nav">
+      <div class="month-nav" style="position:relative;">
         <button onclick="changeMonth(-1)">&#8249;</button>
-        <span class="month-label" id="month-label"></span>
+        <span class="month-label" id="month-label" onclick="toggleMonthPicker()" style="cursor:pointer;user-select:none;" title="月を選択"></span>
         <button onclick="changeMonth(1)">&#8250;</button>
+        <div id="month-picker" style="display:none;position:absolute;top:110%;left:50%;transform:translateX(-50%);background:#1e2130;border:1px solid rgba(255,255,255,0.14);border-radius:14px;padding:8px;min-width:155px;z-index:500;max-height:260px;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.5);"></div>
       </div>
     </div>
   </header>
@@ -1414,7 +1431,9 @@
     </div>
 
     <div class="section-header">
-      <div class="section-title">今月の取引</div>
+      <div class="section-title" onclick="toggleTxSection()" style="cursor:pointer;display:flex;align-items:center;gap:6px;">
+        今月の取引 <span id="tx-toggle-icon" style="font-size:10px;opacity:0.6;">▼</span>
+      </div>
       <div class="section-rule"></div>
       <label class="mf-import-btn" title="マネーフォワードのCSVをインポート">
         📥 MF取込
@@ -1423,7 +1442,14 @@
       <button class="undo-btn" onclick="showClearModal()" title="削除する月を選択">🗑 全削除</button>
       <button class="undo-btn" id="undo-btn" onclick="undo()" disabled>↩ 取消</button>
     </div>
-    <div class="tx-list" id="tx-list"></div>
+    <div id="tx-section-body">
+      <div class="tx-filter-row">
+        <button class="tx-filter-btn active" id="filter-all"    onclick="setTxFilter('all')">全て</button>
+        <button class="tx-filter-btn"        id="filter-income" onclick="setTxFilter('income')">収入</button>
+        <button class="tx-filter-btn"        id="filter-expense" onclick="setTxFilter('expense')">支出</button>
+      </div>
+      <div class="tx-list" id="tx-list"></div>
+    </div>
 
     <div class="bar-section" id="bar-section" style="display:none;">
       <div class="section-header" style="margin-top:24px;">
@@ -1655,6 +1681,8 @@
   let calViewYear, calViewMonth;     // カレンダー表示中の年月
   let undoStack = [];                // 取消し用の操作履歴
   let editingId = null;              // 編集中の取引ID（nullなら新規追加）
+  let txFilter = 'all';              // 'all' | 'income' | 'expense'
+  let txSectionOpen = true;          // 取引セクション開閉状態
 
   function pad2(n) { return String(n).padStart(2, '0'); }
 
@@ -1963,6 +1991,92 @@
     if (window.cloudSaveMonth) window.cloudSaveMonth(key, arr);
     if (key === storageKey()) transactions = arr;
     render();
+  }
+
+  // ===== 月ピッカー =====
+  function toggleMonthPicker() {
+    const picker = document.getElementById('month-picker');
+    if (!picker) return;
+    if (picker.style.display === 'none' || !picker.style.display) {
+      // データがある月を集める
+      const keys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('kakeibo-') && /^kakeibo-\d{4}-\d{2}$/.test(k)) {
+          const arr = readMonth(k);
+          if (arr && arr.length > 0) keys.push(k);
+        }
+      }
+      keys.sort().reverse();
+      const cur = storageKey();
+      picker.innerHTML = keys.length === 0
+        ? '<div style="padding:10px 14px;color:rgba(240,237,232,0.4);font-size:12px;">データなし</div>'
+        : keys.map(k => {
+            const [y, m] = k.replace('kakeibo-', '').split('-');
+            return `<div class="month-pick-item${k === cur ? ' active' : ''}" onclick="gotoMonthKey('${k}');closeMonthPicker()">${y}年${parseInt(m)}月</div>`;
+          }).join('');
+      picker.style.display = 'block';
+      setTimeout(() => document.addEventListener('click', _closeMPOnOutside), 10);
+    } else {
+      closeMonthPicker();
+    }
+  }
+  function closeMonthPicker() {
+    const picker = document.getElementById('month-picker');
+    if (picker) picker.style.display = 'none';
+    document.removeEventListener('click', _closeMPOnOutside);
+  }
+  function _closeMPOnOutside(e) {
+    const picker = document.getElementById('month-picker');
+    const label  = document.getElementById('month-label');
+    if (picker && !picker.contains(e.target) && e.target !== label) {
+      closeMonthPicker();
+    }
+  }
+
+  // ===== 取引セクション開閉 =====
+  function toggleTxSection() {
+    txSectionOpen = !txSectionOpen;
+    const body = document.getElementById('tx-section-body');
+    const icon = document.getElementById('tx-toggle-icon');
+    if (body) body.style.display = txSectionOpen ? '' : 'none';
+    if (icon) icon.textContent = txSectionOpen ? '▼' : '▶';
+  }
+
+  // ===== 取引フィルター =====
+  function setTxFilter(type) {
+    txFilter = type;
+    ['all','income','expense'].forEach(t => {
+      const btn = document.getElementById('filter-' + t);
+      if (btn) btn.classList.toggle('active', t === type);
+    });
+    renderTxList();
+  }
+
+  function renderTxList() {
+    const list = document.getElementById('tx-list');
+    if (!list) return;
+    const filtered = txFilter === 'all' ? transactions
+      : transactions.filter(t => t.type === txFilter);
+    if (filtered.length === 0) {
+      list.innerHTML = `<div class="empty">${transactions.length === 0 ? '取引がありません。下の ＋ ボタンから追加してください。' : '該当する取引がありません'}</div>`;
+    } else {
+      list.innerHTML = filtered.map(t => {
+        const sign  = t.type === 'income' ? '+' : '-';
+        const cls   = t.type === 'income' ? 'income' : 'expense';
+        const icon  = CAT_ICONS[t.cat] || '📦';
+        const acctName = (accounts.find(a => a.id === t.acct) || {}).name || '';
+        return `<div class="tx-item" data-id="${t.id}">
+          <div class="tx-icon">${icon}</div>
+          <div class="tx-info">
+            <div class="tx-name">${escHtml(t.name)}</div>
+            <div class="tx-sub">${t.date}${acctName ? '　' + escHtml(acctName) : ''}</div>
+          </div>
+          <div class="tx-amount ${cls}">${sign}¥${t.amount.toLocaleString()}</div>
+          <button class="tx-edit-btn" onclick="startEdit('${t.id}')">✎</button>
+        </div>`;
+      }).join('');
+    }
   }
 
   // 指定月キーの月へ移動（必要があれば）
@@ -2945,28 +3059,7 @@
     renderAccounts();
     renderNetworth();
 
-    const list = document.getElementById('tx-list');
-    if (transactions.length === 0) {
-      list.innerHTML = `
-        <div class="empty">
-          <div class="empty-icon">○</div>
-          <p>まだ取引がありません</p>
-        </div>
-      `;
-    } else {
-      list.innerHTML = transactions.map(t => `
-        <div class="tx-item">
-          <div class="tx-icon ${t.type}">${CAT_ICONS[t.cat] || '📦'}</div>
-          <div class="tx-info">
-            <div class="tx-name">${t.name}</div>
-            <div class="tx-meta">${t.cat}${t.acct ? ' · ' + t.acct : ''} · ${t.date}</div>
-          </div>
-          <div class="tx-amount ${t.type}">${t.type === 'income' ? '+' : '−'}${fmt(t.amount)}</div>
-          <button class="tx-edit" onclick="startEdit(${t.id})" title="編集">✎</button>
-          <button class="tx-delete" onclick="deleteTransaction(${t.id})" title="削除">✕</button>
-        </div>
-      `).join('');
-    }
+    renderTxList();
 
     const expTx = transactions.filter(t => t.type === 'expense');
     const barSection = document.getElementById('bar-section');
