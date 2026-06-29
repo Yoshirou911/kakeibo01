@@ -947,6 +947,29 @@
       padding: 20px 18px 16px;
     }
 
+    .svg-chart-card {
+      background: var(--surface);
+      backdrop-filter: var(--blur);
+      -webkit-backdrop-filter: var(--blur);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-xl);
+      padding: 18px 14px 10px;
+      margin-bottom: 4px;
+    }
+    .svg-chart-legend {
+      display: flex;
+      gap: 16px;
+      justify-content: flex-end;
+      margin-bottom: 6px;
+    }
+    .svg-chart-card svg { display: block; overflow: visible; }
+    .chart-empty {
+      text-align: center;
+      color: rgba(240,237,232,0.35);
+      font-size: 13px;
+      padding: 28px 0;
+    }
+
     .trend-legend {
       display: flex;
       gap: 16px;
@@ -1423,17 +1446,26 @@
         <div id="pie-container"></div>
       </div>
 
-      <!-- 月次収支グラフ -->
+      <!-- 棒グラフ: 月別収支 -->
       <div class="section-header" style="margin-top:8px;">
-        <div class="section-title">収支の推移（6ヶ月）</div>
+        <div class="section-title">月別収支（棒グラフ）</div>
         <div class="section-rule"></div>
       </div>
-      <div class="trend-card">
-        <div class="trend-legend">
+      <div class="svg-chart-card">
+        <div class="svg-chart-legend">
           <span class="legend-item"><i class="dot income"></i>収入</span>
           <span class="legend-item"><i class="dot expense"></i>支出</span>
         </div>
-        <div class="trend-chart" id="report-trend-chart"></div>
+        <div id="report-bar-chart"></div>
+      </div>
+
+      <!-- 折れ線グラフ: 収支バランス推移 -->
+      <div class="section-header" style="margin-top:8px;">
+        <div class="section-title">収支バランスの推移（折れ線）</div>
+        <div class="section-rule"></div>
+      </div>
+      <div class="svg-chart-card">
+        <div id="report-line-chart"></div>
       </div>
 
     </div>
@@ -2987,12 +3019,114 @@
     }
   }
 
+  function renderReportBarChart() {
+    const el = document.getElementById('report-bar-chart');
+    if (!el) return;
+    const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    const data = getMonthlyTrend(6);
+    if (!data.some(d => d.income > 0 || d.expense > 0)) {
+      el.innerHTML = '<div class="chart-empty">データがありません</div>'; return;
+    }
+    const W=340, H=200, ML=48, MR=8, MT=14, MB=46;
+    const CW=W-ML-MR, CH=H-MT-MB;
+    const maxVal = Math.max(1, ...data.map(d => Math.max(d.income, d.expense)));
+    const mag = Math.pow(10, Math.floor(Math.log10(maxVal/4)));
+    const step = [1,2,2.5,5,10].map(n=>n*mag).find(s=>s>=maxVal/4) || mag;
+    const yMax = step * 5;
+    const slotW = CW / data.length;
+    const barW = Math.max(7, Math.min(14, slotW*0.27));
+    let svg = '';
+    // grid + Y labels
+    for (let i=0; i<=4; i++) {
+      const val=step*i, y=MT+CH*(1-val/yMax);
+      const lbl = val===0?'0': val>=100000000?Math.round(val/100000000)+'億': val>=10000?Math.round(val/10000)+'万': Math.round(val/1000)+'千';
+      svg += `<line x1="${ML}" y1="${y.toFixed(1)}" x2="${ML+CW}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
+      svg += `<text x="${ML-4}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="rgba(240,237,232,0.38)">${lbl}</text>`;
+    }
+    svg += `<line x1="${ML}" y1="${MT}" x2="${ML}" y2="${MT+CH}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    svg += `<line x1="${ML}" y1="${MT+CH}" x2="${ML+CW}" y2="${MT+CH}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    // bars
+    data.forEach((d,i) => {
+      const cx=ML+i*slotW+slotW/2;
+      const incH=Math.max(0,(d.income/yMax)*CH), expH=Math.max(0,(d.expense/yMax)*CH);
+      const baseY=MT+CH, op=d.y===currentYear&&d.m===currentMonth?1:0.62;
+      if(incH>0) svg+=`<rect x="${(cx-1-barW).toFixed(1)}" y="${(baseY-incH).toFixed(1)}" width="${barW}" height="${incH.toFixed(1)}" fill="#6fcf97" rx="2" opacity="${op}"/>`;
+      if(expH>0) svg+=`<rect x="${(cx+1).toFixed(1)}"   y="${(baseY-expH).toFixed(1)}" width="${barW}" height="${expH.toFixed(1)}" fill="#eb8c6e" rx="2" opacity="${op}"/>`;
+      svg+=`<text x="${cx.toFixed(1)}" y="${MT+CH+15}" text-anchor="middle" font-size="9.5" fill="rgba(240,237,232,${op===1?0.85:0.45})">${MONTHS[d.m]}</text>`;
+    });
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+  }
+
+  function renderReportLineChart() {
+    const el = document.getElementById('report-line-chart');
+    if (!el) return;
+    const MONTHS = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
+    const data = getMonthlyTrend(6);
+    if (!data.some(d => d.income > 0 || d.expense > 0)) {
+      el.innerHTML = '<div class="chart-empty">データがありません</div>'; return;
+    }
+    const W=340, H=185, ML=54, MR=8, MT=22, MB=38;
+    const CW=W-ML-MR, CH=H-MT-MB;
+    const bals = data.map(d=>d.balance);
+    const minB=Math.min(0,...bals), maxB=Math.max(0,...bals);
+    const rawRange=Math.max(1,maxB-minB);
+    const pad=rawRange*0.18;
+    const yMin=minB-pad, yMax=maxB+pad, yRange=yMax-yMin;
+    // nice step
+    const mag2=Math.pow(10,Math.floor(Math.log10(rawRange/3||1)));
+    const step2=[1,2,2.5,5,10].map(n=>n*mag2).find(s=>s>=rawRange/3)||mag2;
+    const N=data.length;
+    const pts=data.map((d,i)=>({
+      x: ML+(N===1?CW/2:i/(N-1)*CW),
+      y: MT+CH*(1-(d.balance-yMin)/yRange),
+      d
+    }));
+    const zeroY=Math.min(MT+CH, Math.max(MT, MT+CH*(1-(0-yMin)/yRange)));
+    let svg = `<defs>
+      <linearGradient id="lgPos" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#6fcf97" stop-opacity="0.38"/>
+        <stop offset="100%" stop-color="#6fcf97" stop-opacity="0.02"/>
+      </linearGradient>
+      <linearGradient id="lgNeg" x1="0" y1="1" x2="0" y2="0">
+        <stop offset="0%" stop-color="#eb8c6e" stop-opacity="0.38"/>
+        <stop offset="100%" stop-color="#eb8c6e" stop-opacity="0.02"/>
+      </linearGradient>
+    </defs>`;
+    // grid
+    for (let v=Math.ceil(yMin/step2)*step2; v<=yMax+step2*0.01; v+=step2) {
+      const y=MT+CH*(1-(v-yMin)/yRange);
+      if (y<MT-2||y>MT+CH+2) continue;
+      const av=Math.abs(v);
+      const lbl=v===0?'0': av>=10000?(v<0?'−':'')+Math.round(av/10000)+'万': (v<0?'−':'')+Math.round(av/1000)+'千';
+      svg+=`<line x1="${ML}" y1="${y.toFixed(1)}" x2="${ML+CW}" y2="${y.toFixed(1)}" stroke="rgba(255,255,255,0.07)" stroke-width="1"/>`;
+      svg+=`<text x="${ML-5}" y="${(y+3.5).toFixed(1)}" text-anchor="end" font-size="9" fill="rgba(240,237,232,0.38)">${lbl}</text>`;
+    }
+    // zero dashed line
+    svg+=`<line x1="${ML}" y1="${zeroY.toFixed(1)}" x2="${ML+CW}" y2="${zeroY.toFixed(1)}" stroke="rgba(255,255,255,0.18)" stroke-width="1" stroke-dasharray="4,3"/>`;
+    // area fill
+    const polyCoords=pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+    const areaD=`M${pts[0].x.toFixed(1)},${zeroY.toFixed(1)} L${pts.map(p=>`${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' L')} L${pts[pts.length-1].x.toFixed(1)},${zeroY.toFixed(1)} Z`;
+    svg+=`<path d="${areaD}" fill="url(#${maxB>0?'lgPos':'lgNeg'})"/>`;
+    // line
+    svg+=`<polyline points="${polyCoords}" fill="none" stroke="#7eb8f7" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
+    // dots + X labels
+    pts.forEach(p=>{
+      const cur=p.d.y===currentYear&&p.d.m===currentMonth;
+      const col=p.d.balance>=0?'#6fcf97':'#eb8c6e';
+      svg+=`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="${cur?5:3.5}" fill="${col}" stroke="rgba(12,12,22,0.9)" stroke-width="1.8"/>`;
+      svg+=`<text x="${p.x.toFixed(1)}" y="${MT+CH+16}" text-anchor="middle" font-size="9.5" fill="rgba(240,237,232,${cur?0.85:0.45})">${MONTHS[p.d.m]}</text>`;
+    });
+    svg+=`<line x1="${ML}" y1="${MT}" x2="${ML}" y2="${MT+CH}" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" width="100%" xmlns="http://www.w3.org/2000/svg">${svg}</svg>`;
+  }
+
   function renderReport() {
     const label = document.getElementById('report-month-label');
     if (label) label.textContent = document.getElementById('month-label').textContent;
     renderBudget();
     renderPieChart();
-    renderReportTrend();
+    renderReportBarChart();
+    renderReportLineChart();
   }
 
   init();
