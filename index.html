@@ -2277,24 +2277,27 @@
     if (!value || value <= 0) { document.getElementById('asset-value').focus(); return; }
     const jpyAsset = symbol.endsWith('.T');
     setAssetStatus('価格を取得中…');
+    let basePrice = null, baseFx = 1;
+    let priceOk = false;
     try {
       if (jpyAsset) {
-        const price = await fetchQuote(symbol);
-        priceCache[symbol] = price;
-        assets.push({ id: Date.now(), name, symbol, baseValue: value, basePrice: price, baseFx: 1, currency: 'JPY' });
+        basePrice = await fetchQuote(symbol);
+        priceCache[symbol] = basePrice;
       } else {
         const [price, fx] = await Promise.all([fetchQuote(symbol), fetchFx()]);
+        basePrice = price; baseFx = fx;
         priceCache[symbol] = price; fxCache = fx;
-        assets.push({ id: Date.now(), name, symbol, baseValue: value, basePrice: price, baseFx: fx, currency: 'USD' });
       }
-      saveAssets();
-      document.getElementById('asset-value').value = '';
-      document.getElementById('fund-search').value = '';
-      selectedFund = null;
-      setAssetStatus('');
+      priceOk = true;
     } catch (e) {
-      setAssetStatus('価格を取得できませんでした。時間をおいて再度お試しください。');
+      // 価格取得失敗でも追加は許可（評価額固定で保存）
     }
+    assets.push({ id: Date.now(), name, symbol, baseValue: value, basePrice, baseFx, currency: jpyAsset ? 'JPY' : 'USD' });
+    saveAssets();
+    document.getElementById('asset-value').value = '';
+    document.getElementById('fund-search').value = '';
+    selectedFund = null;
+    setAssetStatus(priceOk ? '' : '追加しました（価格追跡は⟳ボタンで再試行できます）');
   }
 
   async function rebaseAsset(id) {
