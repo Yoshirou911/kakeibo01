@@ -2299,6 +2299,18 @@
     if (cur && accounts.some(a => a.name === cur)) sel.value = cur;
   }
 
+  function selectAcct(name) {
+    const sel = document.getElementById('input-acct');
+    if (!sel) return;
+    sel.value = name;
+    // フォームまでスクロール
+    document.getElementById('submit-btn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // 選択中の口座を一時ハイライト
+    document.querySelectorAll('.acct-item').forEach(el => el.style.outline = '');
+    event.currentTarget.style.outline = '2px solid var(--gold)';
+    setTimeout(() => { if(event.currentTarget) event.currentTarget.style.outline = ''; }, 1500);
+  }
+
   function toggleAcctManage() {
     const m = document.getElementById('acct-manage');
     if (m) m.style.display = (m.style.display === 'none') ? '' : 'none';
@@ -2472,15 +2484,15 @@
       const t = totals[a.name] || { income: 0, expense: 0 };
       const bal = a.initial + t.income - t.expense;
       rows.push(
-        '<div class="acct-item">' +
+        '<div class="acct-item" onclick="selectAcct(\'' + a.name.replace(/'/g, "\\'") + '\')" style="cursor:pointer;" title="タップで取引の口座に設定">' +
           '<div class="acct-item-info">' +
             '<div class="acct-name">' + a.name + '</div>' +
             '<div class="acct-sub">初期 ' + fmt(a.initial) + ' ・ +' + fmt(t.income) + ' / −' + fmt(t.expense) + '</div>' +
           '</div>' +
           '<div class="acct-bal" style="color:' + (bal < 0 ? 'var(--expense)' : 'var(--text)') + '">' + (bal < 0 ? '−' : '') + fmt(bal) + '</div>' +
           '<div class="acct-actions">' +
-            '<button onclick="editAccountInitial(' + a.id + ')" title="初期残高を編集">✎</button>' +
-            '<button onclick="deleteAccount(' + a.id + ')" title="削除">✕</button>' +
+            '<button onclick="event.stopPropagation();editAccountInitial(' + a.id + ')" title="初期残高を編集">✎</button>' +
+            '<button onclick="event.stopPropagation();deleteAccount(' + a.id + ')" title="削除">✕</button>' +
           '</div>' +
         '</div>'
       );
