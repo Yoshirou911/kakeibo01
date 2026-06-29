@@ -1393,6 +1393,7 @@
         📥 MF取込
         <input type="file" accept=".csv" style="display:none;" onchange="importMF(event)">
       </label>
+      <button class="undo-btn" onclick="clearMonthTransactions()" title="今月の取引を全削除">🗑 全削除</button>
       <button class="undo-btn" id="undo-btn" onclick="undo()" disabled>↩ 取消</button>
     </div>
     <div class="tx-list" id="tx-list"></div>
@@ -2647,6 +2648,14 @@
         <option value="その他">その他</option>
       `;
     }
+  }
+
+  function clearMonthTransactions() {
+    const label = document.getElementById('month-label').textContent;
+    if (!confirm(label + ' の取引を全件削除しますか？\n（この操作は取り消せません）')) return;
+    transactions = [];
+    saveData();
+    render();
   }
 
   /* ===== マネーフォワード CSV インポート ===== */
