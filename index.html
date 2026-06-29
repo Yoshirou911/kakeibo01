@@ -359,6 +359,15 @@
     .fund-searching { padding: 14px; text-align: center; font-size: 12px; color: var(--text-3); }
     .fund-group-label { padding: 8px 14px 4px; font-size: 10px; color: var(--text-3); letter-spacing: 0.8px; text-transform: uppercase; }
 
+    .asset-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+    .asset-preset-btn {
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text-2); font-size: 11px;
+      padding: 5px 10px; cursor: pointer; font-family: inherit;
+      white-space: nowrap; transition: all 0.15s;
+    }
+    .asset-preset-btn:hover { border-color: var(--gold); color: var(--gold); }
+    .fund-item.mine { border-left: 2px solid var(--gold); }
     .asset-add { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
     .asset-add select, .asset-add input {
       padding: 9px 10px; border: 1px solid var(--border-med); border-radius: var(--radius);
@@ -1510,6 +1519,7 @@
         </div>
         <div class="asset-status" id="asset-status"></div>
         <div class="asset-list" id="asset-list"></div>
+        <div class="asset-presets" id="asset-preset-row"></div>
         <div class="asset-add">
           <div class="fund-search-wrap">
             <input id="fund-search" class="fund-search-input" placeholder="銘柄を検索（例：SPY, AAPL, トヨタ）"
@@ -2018,10 +2028,12 @@
   /* ===== 投資資産（指数ETFの価格で評価額を自動更新） ===== */
   const FINNHUB_KEY = 'd8ihc39r01qm63bc8jbgd8ihc39r01qm63bc8jc0';
   const FUND_PRESETS = [
-    { name: 'オルカン（全世界株）', symbol: 'ACWI' },
-    { name: 'S&P500',            symbol: 'SPY'  },
-    { name: 'SOX（半導体）',       symbol: 'SOXX' },
-    { name: 'インド株',           symbol: 'INDA' }
+    { name: 'eMAXIS Slim オルカン',  symbol: '2559.T' },
+    { name: 'eMAXIS Slim S&P500',    symbol: '2558.T' },
+    { name: '楽天・NASDAQ-100',      symbol: '2568.T' },
+    { name: '楽天・SOX半導体',       symbol: 'SOXX'   },
+    { name: 'たわらインド株',        symbol: '1678.T' },
+    { name: 'GXウラニウム',          symbol: '224A.T' },
   ];
   let assets = [];
   let priceCache = {};   // symbol -> 価格(USD)
@@ -2157,23 +2169,27 @@
   let fundSearchTimer = null;
 
   const POPULAR_FUNDS = [
-    // NISA向け・円建て（eMAXIS Slimと同じ指数）
-    { symbol: '2559.T', name: 'MAXIS全世界株式 ≒ eMAXIS Slim オルカン（円建て）', type: 'NISA向け' },
-    { symbol: '2558.T', name: 'MAXIS米国株式S&P500 ≒ eMAXIS Slim S&P500（円建て）', type: 'NISA向け' },
-    { symbol: '1655.T', name: 'iShares S&P500（円建て）',            type: 'NISA向け' },
-    { symbol: '2633.T', name: 'NEXT FUNDS S&P500（円建て）',         type: 'NISA向け' },
+    // ★ 保有中の銘柄（楽天証券）
+    { symbol: '2559.T', name: 'eMAXIS Slim オルカン（全世界株式）',         type: '保有中' },
+    { symbol: '2558.T', name: 'eMAXIS Slim S&P500 米国株式',               type: '保有中' },
+    { symbol: '2568.T', name: '楽天・プラス NASDAQ-100インデックス',        type: '保有中' },
+    { symbol: 'SOXX',   name: '楽天・プラス SOXインデックス（半導体）',     type: '保有中' },
+    { symbol: '1678.T', name: 'たわらノーロード インド株式Nifty50',         type: '保有中' },
+    { symbol: '224A.T', name: 'GX ウラニウム ETF',                          type: '保有中' },
+    // NISA向け・円建て
+    { symbol: '1655.T', name: 'iShares S&P500（円建て）',                   type: 'NISA向け' },
+    { symbol: '2633.T', name: 'NEXT FUNDS S&P500（円建て）',                type: 'NISA向け' },
     // 米国ETF（ドル建て）
-    { symbol: 'ACWI',   name: 'iShares MSCI ACWI ETF（全世界株）',  type: 'ETF' },
-    { symbol: 'SPY',    name: 'SPDR S&P 500 ETF',                    type: 'ETF' },
-    { symbol: 'QQQ',    name: 'Invesco QQQ Trust（NASDAQ100）',       type: 'ETF' },
-    { symbol: 'SOXX',   name: 'iShares Semiconductor ETF（半導体）', type: 'ETF' },
-    { symbol: 'GLD',    name: 'SPDR Gold Shares（金）',              type: 'ETF' },
-    { symbol: 'NVDA',   name: 'NVIDIA Corporation',                   type: '株' },
-    { symbol: 'AAPL',   name: 'Apple Inc.',                           type: '株' },
+    { symbol: 'ACWI',   name: 'iShares MSCI ACWI ETF（全世界株）',         type: 'ETF' },
+    { symbol: 'SPY',    name: 'SPDR S&P 500 ETF',                           type: 'ETF' },
+    { symbol: 'QQQ',    name: 'Invesco QQQ Trust（NASDAQ100）',              type: 'ETF' },
+    { symbol: 'GLD',    name: 'SPDR Gold Shares（金）',                     type: 'ETF' },
+    { symbol: 'NVDA',   name: 'NVIDIA Corporation',                          type: '株' },
+    { symbol: 'AAPL',   name: 'Apple Inc.',                                  type: '株' },
     // 日本株
-    { symbol: '7203.T', name: 'トヨタ自動車',                        type: '日本株' },
-    { symbol: '6758.T', name: 'ソニーグループ',                      type: '日本株' },
-    { symbol: '6861.T', name: 'キーエンス',                          type: '日本株' },
+    { symbol: '7203.T', name: 'トヨタ自動車',                               type: '日本株' },
+    { symbol: '6758.T', name: 'ソニーグループ',                             type: '日本株' },
+    { symbol: '6861.T', name: 'キーエンス',                                 type: '日本株' },
   ];
 
   function showFundDropdown() {
@@ -2214,18 +2230,30 @@
     }
   }
 
+  function fundItemHTML(f) {
+    const isMine = f.type === '保有中';
+    return `<div class="fund-item${isMine ? ' mine' : ''}" onclick="selectFund('${f.symbol}','${f.name.replace(/'/g,"\\'")}')">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <span class="fund-item-symbol">${f.symbol}</span>
+        <span class="fund-item-type" style="${isMine ? 'color:var(--gold)' : ''}">${f.type}</span>
+      </div>
+      <div class="fund-item-name">${f.name}</div>
+    </div>`;
+  }
+
   function renderFundDropdown(items, isPopular) {
     const dd = document.getElementById('fund-dropdown');
     dd.style.display = 'block';
-    dd.innerHTML = (isPopular ? '<div class="fund-group-label">人気銘柄</div>' : '') +
-      items.map(f => `
-        <div class="fund-item" onclick="selectFund('${f.symbol}','${f.name.replace(/'/g,"\\'")}')">
-          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-            <span class="fund-item-symbol">${f.symbol}</span>
-            <span class="fund-item-type">${f.type}</span>
-          </div>
-          <div class="fund-item-name">${f.name}</div>
-        </div>`).join('');
+    if (!isPopular) {
+      dd.innerHTML = items.map(fundItemHTML).join('');
+      return;
+    }
+    const mine   = items.filter(f => f.type === '保有中');
+    const others = items.filter(f => f.type !== '保有中');
+    let html = '';
+    if (mine.length)   html += '<div class="fund-group-label">⭐ 保有中の銘柄</div>' + mine.map(fundItemHTML).join('');
+    if (others.length) html += '<div class="fund-group-label">人気銘柄</div>'         + others.map(fundItemHTML).join('');
+    dd.innerHTML = html;
   }
 
   function selectFund(symbol, name) {
@@ -2946,7 +2974,7 @@
 
     // 投資資産（各銘柄）
     const investItems = assets.map(a => ({
-      name: FUND_PRESETS.find(f => f.symbol === a.symbol)?.name || a.symbol,
+      name: a.name || a.symbol,
       val: holdingValue(a)
     }));
     const investTotal = investItems.reduce((s, a) => s + a.val, 0);
@@ -3001,9 +3029,18 @@
       </div>`;
   }
 
+  function renderAssetPresets() {
+    const row = document.getElementById('asset-preset-row');
+    if (!row) return;
+    row.innerHTML = FUND_PRESETS.map(f =>
+      `<button class="asset-preset-btn" onclick="selectFund('${f.symbol}','${f.name.replace(/'/g,"\\'")}')">${f.name}</button>`
+    ).join('');
+  }
+
   function renderInvestPage() {
     renderNetworth();
     renderAllocPie();
+    renderAssetPresets();
     renderAssets();
     // 6時間以上経過していたら自動更新
     const cached = localStorage.getItem('kakeibo-prices');
